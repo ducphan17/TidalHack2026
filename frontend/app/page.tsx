@@ -27,6 +27,14 @@ type Step =
   | "feedback"
   | "qa_active";
 
+type AnalyzeStep = "transcribing" | "computing" | "analyzing" | "done";
+
+const ANALYZE_STEPS: { key: AnalyzeStep; label: string }[] = [
+  { key: "transcribing", label: "Transcribing audio..." },
+  { key: "computing", label: "Computing speech metrics..." },
+  { key: "analyzing", label: "Analyzing presentation with AI..." },
+];
+
 export default function MeetingRoom() {
   const [step, setStep] = useState<Step>("upload");
   const [pdfBase64, setPdfBase64] = useState("");
@@ -41,6 +49,8 @@ export default function MeetingRoom() {
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [attemptNumber, setAttemptNumber] = useState(0);
+  const [analyzeStep, setAnalyzeStep] = useState<AnalyzeStep | null>(null);
+  const [completedSteps, setCompletedSteps] = useState<Set<AnalyzeStep>>(new Set());
   const hasStartedRecording = useRef(false);
 
   // Load history from API on mount
@@ -121,6 +131,9 @@ export default function MeetingRoom() {
   const analyzeAndShowFeedback = useCallback(async () => {
     if (!blob) return;
 
+    setAnalyzeStep(null);
+    setCompletedSteps(new Set());
+
     const formData = new FormData();
     formData.append("audio_file", blob, "recording.webm");
     formData.append("slides_pdf_base64", pdfBase64);
@@ -135,22 +148,64 @@ export default function MeetingRoom() {
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        const msg = errData.error ?? "Analysis failed";
-        if (msg.includes("no spoken audio")) {
-          throw new Error(
-            "No speech detected. Make sure your microphone is working and try speaking clearly."
-          );
-        }
-        throw new Error(msg);
+        throw new Error("Analysis failed");
       }
 
-      const data = await res.json();
-      setFeedback(data.presentation_report);
-      setSessionId(data.sessionId);
-      setTranscript(data.transcript ?? null);
-      if (data.qa_pack?.questions?.length) {
-        setQaPack(data.qa_pack.questions);
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let resultData: {
+        sessionId: string;
+        transcript: string;
+        presentation_report: PresentationReport;
+        qa_pack: { questions: QAQuestion[] } | null;
+      } | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const json = line.slice(6);
+          if (!json) continue;
+
+          const event = JSON.parse(json);
+
+          if (event.step === "error") {
+            throw new Error(event.message);
+          }
+
+          if (event.step === "done") {
+            // Mark analyzing as completed
+            setCompletedSteps((prev) => new Set(prev).add("analyzing"));
+            setAnalyzeStep("done");
+            resultData = event.data;
+          } else {
+            // Mark previous step as completed, set current
+            setAnalyzeStep((prev) => {
+              if (prev && prev !== "done") {
+                setCompletedSteps((s) => new Set(s).add(prev));
+              }
+              return event.step;
+            });
+          }
+        }
+      }
+
+      if (!resultData) throw new Error("No result received");
+
+      setFeedback(resultData.presentation_report);
+      setSessionId(resultData.sessionId);
+      setTranscript(resultData.transcript ?? null);
+      if (resultData.qa_pack?.questions?.length) {
+        setQaPack(resultData.qa_pack.questions);
       }
 
       const newAttempt = attemptNumber + 1;
@@ -161,7 +216,7 @@ export default function MeetingRoom() {
           month: "short",
           day: "numeric",
         }),
-        score: data.presentation_report.score,
+        score: resultData.presentation_report.score,
         attempt: newAttempt,
       };
 
@@ -171,28 +226,30 @@ export default function MeetingRoom() {
       fetch("/api/history", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score: data.presentation_report.score, attempt: newAttempt }),
+        body: JSON.stringify({ score: resultData.presentation_report.score, attempt: newAttempt }),
       }).catch(() => {
         // History persistence is optional
       });
 
-      // Auto-play coach recap
-      try {
-        const voiceRes = await fetch("/api/voice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: data.presentation_report.summary,
-            mode: "recap",
-          }),
+      // Auto-play coach recap (non-blocking)
+      fetch("/api/voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: resultData.presentation_report.summary,
+          mode: "recap",
+        }),
+      })
+        .then((voiceRes) => {
+          if (voiceRes.ok) return voiceRes.blob();
+          return null;
+        })
+        .then((audioBlob) => {
+          if (audioBlob) setVoiceUrl(URL.createObjectURL(audioBlob));
+        })
+        .catch(() => {
+          // Voice is optional
         });
-        if (voiceRes.ok) {
-          const audioBlob = await voiceRes.blob();
-          setVoiceUrl(URL.createObjectURL(audioBlob));
-        }
-      } catch {
-        // Voice is optional
-      }
     } catch (err) {
       console.error(err);
       setFeedback({
@@ -206,6 +263,8 @@ export default function MeetingRoom() {
       });
     } finally {
       setStep("feedback");
+      setAnalyzeStep(null);
+      setCompletedSteps(new Set());
       stopMicrophone();
     }
   }, [blob, pdfBase64, slideCount, qaOptIn, qaCount, stopMicrophone, attemptNumber]);
@@ -492,11 +551,55 @@ export default function MeetingRoom() {
         {step === "analyzing" && (
           <section className="flex flex-col items-center justify-center py-16">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-            <p className="mt-4 text-zinc-600 dark:text-zinc-400">
-              Transcribing and analyzing your presentation...
-            </p>
-            <p className="mt-2 text-xs text-zinc-400">
-              This may take 15-30 seconds (free tier)
+            <div className="mt-6 w-full max-w-xs space-y-3">
+              {ANALYZE_STEPS.map(({ key, label }) => {
+                const isCompleted = completedSteps.has(key);
+                const isCurrent = analyzeStep === key;
+                return (
+                  <div
+                    key={key}
+                    className={`flex items-center gap-3 text-sm transition-opacity ${
+                      isCompleted || isCurrent
+                        ? "opacity-100"
+                        : "opacity-30"
+                    }`}
+                  >
+                    {isCompleted ? (
+                      <svg
+                        className="h-5 w-5 shrink-0 text-green-500"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    ) : isCurrent ? (
+                      <div className="h-5 w-5 shrink-0 flex items-center justify-center">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                      </div>
+                    ) : (
+                      <div className="h-5 w-5 shrink-0 rounded-full border-2 border-zinc-300 dark:border-zinc-600" />
+                    )}
+                    <span
+                      className={
+                        isCompleted
+                          ? "text-green-600 dark:text-green-400"
+                          : isCurrent
+                          ? "text-zinc-900 dark:text-zinc-100 font-medium"
+                          : "text-zinc-400 dark:text-zinc-600"
+                      }
+                    >
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-4 text-xs text-zinc-400">
+              This may take 15-30 seconds
             </p>
           </section>
         )}
