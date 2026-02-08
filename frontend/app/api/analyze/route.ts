@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
     const { metrics, unclear_terms } = computeMetrics(words, durationMs);
 
     // 3. Judge presentation via Gemini
+    console.log("Calling Gemini with qaOptIn:", qaOptIn, "qaCount:", qaCount);
     const result = await judgePresentation(
       transcript,
       metrics,
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
       qaOptIn,
       qaCount
     );
+
+    console.log("Gemini result keys:", Object.keys(result));
+    console.log("qa_pack:", JSON.stringify(result.qa_pack));
 
     // 4. Store session
     const sessionId = randomUUID();

@@ -145,13 +145,6 @@ Return this exact JSON:
   QABLOCK
 }`;
 
-const QA_BLOCK = `,
-  "qa_pack": {
-    "questions": [
-      {"id": "q1", "question": "Question text?", "slide_ref": "Page N"}
-    ]
-  }`;
-
 export async function judgePresentation(
   transcript: string,
   metrics: SpeechMetrics,
@@ -164,10 +157,15 @@ export async function judgePresentation(
   if (qaOptIn) {
     prompt = prompt.replace(
       "QABLOCK",
-      QA_BLOCK.replace(
-        "questions",
-        `questions (generate exactly ${qaCount} questions)`
-      )
+      `,
+  "qa_pack": {
+    "questions": [
+      {"id": "q1", "question": "A challenging question about the presentation content?", "slide_ref": "Page 1"},
+      {"id": "q2", "question": "Another question referencing a specific slide?", "slide_ref": "Page 2"}
+    ]
+  }
+
+IMPORTANT: Generate exactly ${qaCount} questions in qa_pack.questions. Each question must have a unique id (q1, q2, ...), a question about the presentation, and a slide_ref.`
     );
   } else {
     prompt = prompt.replace("QABLOCK", "");

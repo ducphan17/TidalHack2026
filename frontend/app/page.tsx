@@ -33,7 +33,33 @@ export default function MeetingRoom() {
   const [history, setHistory] = useState<ProgressDataPoint[]>([]);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
+  const [attemptNumber, setAttemptNumber] = useState(0);
   const hasStartedRecording = useRef(false);
+
+  // Load history from API on mount
+  useEffect(() => {
+    fetch("/api/history")
+      .then((res) => res.json())
+      .then((records: Array<{ score: number; attempt: number; timestamp: string }>) => {
+        if (Array.isArray(records) && records.length > 0) {
+          const points: ProgressDataPoint[] = records.map((r) => ({
+            date: new Date(r.timestamp).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            }),
+            score: r.score,
+            attempt: r.attempt,
+          }));
+          // API returns newest first, chart needs oldest first
+          setHistory(points.reverse());
+          const maxAttempt = Math.max(...records.map((r) => r.attempt ?? 0));
+          setAttemptNumber(maxAttempt);
+        }
+      })
+      .catch(() => {
+        // History is optional
+      });
+  }, []);
 
   const { stream, error: mediaError, startMicrophone, stopMicrophone } =
     useMedia();
@@ -113,16 +139,28 @@ export default function MeetingRoom() {
         setQaPack(data.qa_pack.questions);
       }
 
-      setHistory((prev) => [
-        {
-          date: new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          }),
-          score: data.presentation_report.score,
-        },
-        ...prev,
-      ]);
+      const newAttempt = attemptNumber + 1;
+      setAttemptNumber(newAttempt);
+
+      const newPoint: ProgressDataPoint = {
+        date: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        score: data.presentation_report.score,
+        attempt: newAttempt,
+      };
+
+      setHistory((prev) => [...prev, newPoint]);
+
+      // Persist to history API
+      fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score: data.presentation_report.score, attempt: newAttempt }),
+      }).catch(() => {
+        // History persistence is optional
+      });
 
       // Auto-play coach recap
       try {
@@ -156,7 +194,7 @@ export default function MeetingRoom() {
       setStep("feedback");
       stopMicrophone();
     }
-  }, [blob, pdfBase64, qaOptIn, qaCount, stopMicrophone]);
+  }, [blob, pdfBase64, qaOptIn, qaCount, stopMicrophone, attemptNumber]);
 
   useEffect(() => {
     if (step === "recording" && !isRecording && blob) {
@@ -170,6 +208,23 @@ export default function MeetingRoom() {
     setStep("feedback");
   }, []);
 
+  const handlePracticeAgain = useCallback(async () => {
+    setFeedback(null);
+    setVoiceUrl(null);
+    setSessionId(null);
+    setQaPack(null);
+    setQaResults([]);
+    setTranscript(null);
+    resetRecorder();
+    hasStartedRecording.current = false;
+    try {
+      await startMicrophone();
+      setStep("recording");
+    } catch {
+      setStep("upload");
+    }
+  }, [resetRecorder, startMicrophone]);
+
   const handleReset = useCallback(() => {
     setStep("upload");
     setFeedback(null);
@@ -178,7 +233,14 @@ export default function MeetingRoom() {
     setQaPack(null);
     setQaResults([]);
     setTranscript(null);
-  }, []);
+    setPdfBase64("");
+    setSlideCount(0);
+    setQaOptIn(false);
+    setQaCount(3);
+    setAttemptNumber(0);
+    setHistory([]);
+    resetRecorder();
+  }, [resetRecorder]);
 
   const error = mediaError ?? recordError;
   const canStartRecording = pdfBase64.length > 0;
@@ -344,10 +406,18 @@ export default function MeetingRoom() {
         {step === "feedback" && feedback && (
           <section className="space-y-8">
             <div className="grid gap-4 sm:grid-cols-2">
-              <ScoreCard score={feedback.score} label="Overall score" />
+              <div className="relative">
+                <ScoreCard score={feedback.score} label="Overall score" />
+                <span className="absolute top-3 right-3 rounded-full bg-blue-100 dark:bg-blue-900 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+                  Attempt #{attemptNumber}
+                </span>
+              </div>
               <div className="flex flex-col gap-2">
-                <Button variant="primary" onClick={handleReset}>
-                  Record again
+                <Button variant="primary" onClick={handlePracticeAgain}>
+                  Practice Again
+                </Button>
+                <Button variant="secondary" onClick={handleReset}>
+                  New Presentation
                 </Button>
                 {qaPack && qaPack.length > 0 && sessionId && (
                   <Button

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Card, Button } from "@/components/shared";
 import { VoicePlayer } from "@/components/feedback";
-import { RecordingControls, useMediaRecorder } from "@/components/recorder";
+import { RecordingControls, useMediaRecorder, AudioLevelMeter } from "@/components/recorder";
 import { useMedia } from "@/hooks";
 import type { QAQuestion, QAFeedback } from "@/services/gemini";
 
@@ -25,6 +25,8 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
   const [questionAudioUrl, setQuestionAudioUrl] = useState<string | null>(null);
   const [feedbackAudioUrl, setFeedbackAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const hasStartedRecording = useRef(false);
+  const pendingRecord = useRef(false);
 
   const { stream, startMicrophone, stopMicrophone } = useMedia();
   const {
@@ -38,41 +40,81 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
   const currentQuestion = questions[currentIndex];
   const isLast = currentIndex === questions.length - 1;
 
-  const playQuestion = useCallback(async () => {
-    try {
-      const res = await fetch("/api/voice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: currentQuestion.question,
-          mode: "question",
-        }),
-      });
-      if (res.ok) {
-        const audioBlob = await res.blob();
-        setQuestionAudioUrl(URL.createObjectURL(audioBlob));
+  // Auto-play question audio when entering a new question
+  useEffect(() => {
+    if (qaStep !== "question") return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: currentQuestion.question,
+            mode: "question",
+          }),
+        });
+        if (res.ok && !cancelled) {
+          const audioBlob = await res.blob();
+          const url = URL.createObjectURL(audioBlob);
+          setQuestionAudioUrl(url);
+          // Auto-play
+          const audio = new Audio(url);
+          audio.play().catch(() => {});
+        }
+      } catch {
+        // Voice is optional
       }
-    } catch {
-      // Voice is optional
-    }
-  }, [currentQuestion]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qaStep, currentQuestion]);
 
   const handleStartAnswer = useCallback(async () => {
     setError(null);
     resetRecorder();
+    hasStartedRecording.current = false;
+    pendingRecord.current = true;
     try {
       await startMicrophone();
-      startRecording();
       setQaStep("recording");
     } catch {
       setError("Could not access microphone");
+      pendingRecord.current = false;
     }
-  }, [startMicrophone, startRecording, resetRecorder]);
+  }, [startMicrophone, resetRecorder]);
+
+  // Start recording after stream is ready (same pattern as main page)
+  useEffect(() => {
+    if (
+      qaStep === "recording" &&
+      stream &&
+      !isRecording &&
+      !answerBlob &&
+      !hasStartedRecording.current &&
+      pendingRecord.current
+    ) {
+      hasStartedRecording.current = true;
+      pendingRecord.current = false;
+      startRecording();
+    }
+  }, [qaStep, stream, isRecording, answerBlob, startRecording]);
 
   const handleStopAnswer = useCallback(() => {
     stopRecording();
     stopMicrophone();
   }, [stopRecording, stopMicrophone]);
+
+  // Auto-grade when recording stops and blob is available
+  useEffect(() => {
+    if (qaStep === "recording" && !isRecording && answerBlob) {
+      gradeAnswer();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qaStep, isRecording, answerBlob]);
 
   const gradeAnswer = useCallback(async () => {
     if (!answerBlob) return;
@@ -121,7 +163,6 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
     }
   }, [answerBlob, sessionId, currentQuestion]);
 
-  // Auto-grade when recording stops and blob is available
   const handleNext = useCallback(() => {
     setCurrentFeedback(null);
     setQuestionAudioUrl(null);
@@ -157,9 +198,9 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
 
         {qaStep === "question" && (
           <div className="flex gap-3">
-            <Button variant="secondary" size="sm" onClick={playQuestion}>
-              Play question audio
-            </Button>
+            {questionAudioUrl && (
+              <VoicePlayer audioUrl={questionAudioUrl} />
+            )}
             <Button variant="primary" size="sm" onClick={handleStartAnswer}>
               Record your answer
             </Button>
@@ -172,6 +213,7 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
               <span className="flex h-4 w-4 animate-pulse rounded-full bg-red-500" />
               <span className="font-medium text-sm">Recording answer...</span>
             </div>
+            <AudioLevelMeter stream={stream} />
             <RecordingControls
               isRecording={isRecording}
               canStart={!!stream}
@@ -189,22 +231,7 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
             </span>
           </div>
         )}
-
-        {questionAudioUrl && qaStep === "question" && (
-          <div className="mt-3">
-            <VoicePlayer audioUrl={questionAudioUrl} />
-          </div>
-        )}
       </Card>
-
-      {/* Submit answer after recording stops */}
-      {qaStep === "recording" && !isRecording && answerBlob && (
-        <Card>
-          <Button variant="primary" onClick={gradeAnswer}>
-            Submit answer for grading
-          </Button>
-        </Card>
-      )}
 
       {qaStep === "feedback" && currentFeedback && (
         <Card>

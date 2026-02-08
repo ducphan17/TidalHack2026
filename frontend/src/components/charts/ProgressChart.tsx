@@ -13,6 +13,7 @@ import {
 export interface ProgressDataPoint {
   date: string;
   score: number;
+  attempt: number;
   label?: string;
 }
 
@@ -35,7 +36,8 @@ export function ProgressChart({ data }: ProgressChartProps) {
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-200 dark:stroke-zinc-700" />
           <XAxis
-            dataKey="date"
+            dataKey="attempt"
+            tickFormatter={(v: number) => `#${v}`}
             tick={{ fill: "currentColor", fontSize: 12 }}
             stroke="currentColor"
           />
@@ -50,6 +52,10 @@ export function ProgressChart({ data }: ProgressChartProps) {
               border: "1px solid var(--foreground)",
               borderRadius: "8px",
             }}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            formatter={(value: any) => [`${value}/10`, "Score"]}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            labelFormatter={(label: any) => `Attempt #${label}`}
           />
           <Line
             type="monotone"
