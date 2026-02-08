@@ -2,8 +2,15 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSpeech } from "./useSpeech";
+import type { QAQuestion, LiveQAGrade } from "@/services/gemini";
 
-export type LiveQAState = "IDLE" | "LISTENING" | "THINKING" | "SPEAKING";
+export type LiveQAState =
+  | "IDLE"
+  | "LOADING"
+  | "ASKING"
+  | "LISTENING"
+  | "GRADING"
+  | "DONE";
 
 export interface LiveQAHistoryEntry {
   role: "user" | "assistant";
@@ -12,25 +19,29 @@ export interface LiveQAHistoryEntry {
 
 interface UseLiveQAOptions {
   sessionId: string;
+  questionCount: number;
   voiceId?: string;
   silenceTimeoutMs?: number;
-  maxQuestions?: number;
 }
 
 export function useLiveQA({
   sessionId,
+  questionCount,
   voiceId = "9BWtsMINqrJLrRacOk9x",
-  silenceTimeoutMs = 1500,
-  maxQuestions,
+  silenceTimeoutMs = 2500,
 }: UseLiveQAOptions) {
   const [state, setState] = useState<LiveQAState>("IDLE");
-  const [history, setHistory] = useState<LiveQAHistoryEntry[]>([]);
-  const [currentAnswer, setCurrentAnswer] = useState("");
+  const [questions, setQuestions] = useState<QAQuestion[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [grades, setGrades] = useState<LiveQAGrade[]>([]);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const stateRef = useRef<LiveQAState>("IDLE");
-  const historyRef = useRef<LiveQAHistoryEntry[]>([]);
+  const questionsRef = useRef<QAQuestion[]>([]);
+  const currentIndexRef = useRef(0);
+  const answersRef = useRef<string[]>([]);
   const utteranceRef = useRef("");
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -48,54 +59,31 @@ export function useLiveQA({
     }
   }, []);
 
-  const submitUtterance = useCallback(
-    async (text: string) => {
-      if (!text.trim()) {
-        updateState("LISTENING");
-        return;
-      }
+  // Refs to speech control functions (avoids circular dependency)
+  const stopListeningRef = useRef<(() => void) | null>(null);
+  const startListeningRef = useRef<(() => void) | null>(null);
 
-      updateState("THINKING");
+  // Play TTS for a question, then transition to LISTENING
+  const askQuestion = useCallback(
+    async (question: QAQuestion) => {
+      updateState("ASKING");
       setInterimTranscript("");
+      utteranceRef.current = "";
 
-      const userEntry: LiveQAHistoryEntry = { role: "user", text: text.trim() };
-      const newHistory = [...historyRef.current, userEntry];
-      historyRef.current = newHistory;
-      setHistory(newHistory);
+      // STOP speech recognition while TTS plays — prevents mic from capturing TTS audio
+      stopListeningRef.current?.();
 
       try {
         abortRef.current = new AbortController();
 
-        // Get AI response
-        const res = await fetch("/api/qa/live", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            utterance: text.trim(),
-            history: historyRef.current.slice(0, -1), // exclude current utterance
-          }),
-          signal: abortRef.current.signal,
-        });
-
-        if (!res.ok) throw new Error("Failed to get response");
-        const { answer } = await res.json();
-
-        // Add assistant entry
-        const assistantEntry: LiveQAHistoryEntry = {
-          role: "assistant",
-          text: answer,
-        };
-        const updatedHistory = [...historyRef.current, assistantEntry];
-        historyRef.current = updatedHistory;
-        setHistory(updatedHistory);
-        setCurrentAnswer(answer);
-
-        // Get TTS audio
         const ttsRes = await fetch("/api/voice", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: answer, mode: "recap", voiceId }),
+          body: JSON.stringify({
+            text: question.question,
+            mode: "question",
+            voiceId,
+          }),
           signal: abortRef.current.signal,
         });
 
@@ -103,47 +91,96 @@ export function useLiveQA({
         const audioBlob = await ttsRes.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
 
-        // Play audio
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
 
         audio.onended = () => {
           URL.revokeObjectURL(audioUrl);
           audioRef.current = null;
-          if (stateRef.current === "SPEAKING") {
+          if (stateRef.current === "ASKING") {
+            // RESTART speech recognition fresh — clean transcript, no echo
+            startListeningRef.current?.();
             updateState("LISTENING");
-            utteranceRef.current = "";
           }
         };
 
-        updateState("SPEAKING");
         await audio.play();
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Something went wrong");
+        console.warn("TTS failed, moving to LISTENING:", err);
+        // Still restart speech and let user answer
+        startListeningRef.current?.();
         updateState("LISTENING");
-        utteranceRef.current = "";
       }
     },
-    [sessionId, voiceId, updateState]
+    [voiceId, updateState]
+  );
+
+  // Submit user's answer and move to next question or grading
+  const submitAnswer = useCallback(
+    async (text: string) => {
+      clearSilenceTimer();
+
+      const answer = text.trim() || "(No answer provided)";
+      const idx = currentIndexRef.current;
+      const qs = questionsRef.current;
+
+      // Store answer
+      const newAnswers = [...answersRef.current];
+      newAnswers[idx] = answer;
+      answersRef.current = newAnswers;
+      setAnswers([...newAnswers]);
+      setInterimTranscript("");
+      utteranceRef.current = "";
+
+      const nextIdx = idx + 1;
+
+      if (nextIdx < qs.length) {
+        // Move to next question — askQuestion will stop/restart speech recognition
+        currentIndexRef.current = nextIdx;
+        setCurrentIndex(nextIdx);
+        askQuestion(qs[nextIdx]);
+      } else {
+        // All questions answered — stop listening and grade
+        stopListeningRef.current?.();
+        updateState("GRADING");
+
+        try {
+          abortRef.current = new AbortController();
+
+          const qaPairs = qs.map((q, i) => ({
+            question: q.question,
+            slide_ref: q.slide_ref,
+            answer: newAnswers[i] || "(No answer provided)",
+          }));
+
+          const res = await fetch("/api/qa/live/grade-all", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, qaPairs }),
+            signal: abortRef.current.signal,
+          });
+
+          if (!res.ok) throw new Error("Grading failed");
+          const { grades: gradeResults } = await res.json();
+
+          setGrades(gradeResults);
+          updateState("DONE");
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setError(
+            err instanceof Error ? err.message : "Grading failed"
+          );
+          updateState("DONE");
+        }
+      }
+    },
+    [sessionId, askQuestion, clearSilenceTimer, updateState]
   );
 
   const handleSpeechResult = useCallback(
     (transcript: string, isFinal: boolean) => {
-      const currentState = stateRef.current;
-
-      // Barge-in: interrupt AI if user starts speaking
-      if (currentState === "SPEAKING") {
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current = null;
-        }
-        abortRef.current?.abort();
-        updateState("LISTENING");
-        utteranceRef.current = "";
-      }
-
-      if (currentState === "THINKING") return; // ignore speech during thinking
+      if (stateRef.current !== "LISTENING") return;
 
       setInterimTranscript(transcript);
 
@@ -155,11 +192,11 @@ export function useLiveQA({
         silenceTimerRef.current = setTimeout(() => {
           const text = utteranceRef.current;
           utteranceRef.current = "";
-          submitUtterance(text);
+          submitAnswer(text);
         }, silenceTimeoutMs);
       }
     },
-    [updateState, clearSilenceTimer, submitUtterance, silenceTimeoutMs]
+    [clearSilenceTimer, submitAnswer, silenceTimeoutMs]
   );
 
   const {
@@ -173,16 +210,55 @@ export function useLiveQA({
     onResult: handleSpeechResult,
   });
 
-  const start = useCallback(() => {
+  // Keep refs in sync
+  useEffect(() => {
+    stopListeningRef.current = stopListening;
+    startListeningRef.current = startListening;
+  }, [stopListening, startListening]);
+
+  // Start the Live Q&A session
+  const start = useCallback(async () => {
     setError(null);
-    setHistory([]);
-    setCurrentAnswer("");
+    setQuestions([]);
+    setCurrentIndex(0);
+    setAnswers([]);
+    setGrades([]);
     setInterimTranscript("");
-    historyRef.current = [];
+    questionsRef.current = [];
+    currentIndexRef.current = 0;
+    answersRef.current = [];
     utteranceRef.current = "";
-    updateState("LISTENING");
-    startListening();
-  }, [startListening, updateState]);
+
+    updateState("LOADING");
+
+    try {
+      abortRef.current = new AbortController();
+
+      const res = await fetch("/api/qa/live/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, count: questionCount }),
+        signal: abortRef.current.signal,
+      });
+
+      if (!res.ok) throw new Error("Failed to generate questions");
+      const { questions: qs } = await res.json();
+
+      if (!qs || qs.length === 0) {
+        throw new Error("No questions generated");
+      }
+
+      questionsRef.current = qs;
+      setQuestions(qs);
+
+      // Ask the first question (it will start speech recognition after TTS ends)
+      askQuestion(qs[0]);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setError(err instanceof Error ? err.message : "Failed to start Q&A");
+      updateState("IDLE");
+    }
+  }, [sessionId, questionCount, askQuestion, updateState]);
 
   const stop = useCallback(() => {
     clearSilenceTimer();
@@ -211,14 +287,26 @@ export function useLiveQA({
     };
   }, [clearSilenceTimer]);
 
+  // Let the user manually submit their current answer
+  const submitCurrentAnswer = useCallback(() => {
+    if (stateRef.current !== "LISTENING") return;
+    clearSilenceTimer();
+    const text = utteranceRef.current || interimTranscript || speechTranscript;
+    utteranceRef.current = "";
+    submitAnswer(text);
+  }, [clearSilenceTimer, submitAnswer, interimTranscript, speechTranscript]);
+
   return {
     state,
+    questions,
+    currentIndex,
+    answers,
+    grades,
     transcript: interimTranscript || speechTranscript,
-    history,
-    currentAnswer,
     isListening,
+    error,
     start,
     stop,
-    error,
+    submitCurrentAnswer,
   };
 }

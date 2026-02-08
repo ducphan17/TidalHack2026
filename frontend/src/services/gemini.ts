@@ -77,6 +77,14 @@ export interface QAFeedback {
   suggested_answer: string;
 }
 
+export interface LiveQAGrade {
+  question: string;
+  answer: string;
+  score: number;
+  feedback: string;
+  suggested_answer: string;
+}
+
 /* ---------- Helpers ---------- */
 
 function geminiUrl(): string {
@@ -391,50 +399,40 @@ ${answerTranscript}`;
   }
 }
 
-/* ---------- Conversational Q&A ---------- */
+/* ---------- Generate Live Q&A Questions ---------- */
 
-const CONVERSATIONAL_QA_PROMPT = `You are a friendly, curious audience member who just watched a presentation. You're having a casual conversation with the presenter about their talk.
+const GENERATE_QUESTIONS_PROMPT = `You are a curious audience member who just watched a presentation. Generate exactly {COUNT} questions about the content.
 
 Rules:
-- Keep responses to 1-3 sentences. Be concise and conversational.
-- Use contractions and short sentences — this will be spoken aloud.
-- If the user's answer is good, acknowledge it briefly and ask a follow-up or move on.
-- If the answer is unclear, gently ask for clarification.
-- Reference specific slides or content from the presentation when relevant.
-- Be encouraging but honest. Don't be overly formal.
-- Do NOT use markdown, bullet points, or any formatting. Just plain spoken text.
+- Write ONLY the question itself. No preamble, no filler, no "Great presentation" or "I was wondering". Just the question.
+- Each question will be read aloud by text-to-speech, so keep them short (1-2 sentences max).
+- Vary the question style: some "why" questions, some "how" questions, some "what if" scenarios, some asking to explain a concept.
+- Questions should test different parts of the presentation — don't cluster on one slide.
+- Use plain conversational English. No markdown, no bullet points, no formatting.
 
 Return this exact JSON:
-{ "answer": "Your spoken response here" }`;
+{
+  "questions": [
+    {"id": "q1", "question": "Your first question here?", "slide_ref": "Page 1"},
+    {"id": "q2", "question": "Your second question here?", "slide_ref": "Page 2"}
+  ]
+}`;
 
-export async function conversationalQA(
-  utterance: string,
-  history: { role: "user" | "assistant"; text: string }[],
-  pdfBase64?: string
-): Promise<{ answer: string }> {
-  const historyText = history
-    .map((h) => `${h.role === "user" ? "Presenter" : "You"}: ${h.text}`)
-    .join("\n");
+export async function generateLiveQuestions(
+  pdfBase64: string,
+  count: number
+): Promise<QAQuestion[]> {
+  const prompt = GENERATE_QUESTIONS_PROMPT.replace("{COUNT}", String(count));
 
-  const textContent = `${CONVERSATIONAL_QA_PROMPT}
-
----
-
-CONVERSATION SO FAR:
-${historyText || "(This is the start of the conversation)"}
-
----
-
-PRESENTER JUST SAID:
-${utterance}`;
+  const cleanBase64 = pdfBase64
+    ? pdfBase64
+        .replace(/^data:application\/pdf;base64,/, "")
+        .replace(/\s/g, "")
+    : "";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parts: any[] = [{ text: textContent }];
-
-  if (pdfBase64) {
-    const cleanBase64 = pdfBase64
-      .replace(/^data:application\/pdf;base64,/, "")
-      .replace(/\s/g, "");
+  const parts: any[] = [];
+  if (cleanBase64) {
     parts.push({
       inline_data: {
         mime_type: "application/pdf",
@@ -442,8 +440,88 @@ ${utterance}`;
       },
     });
   }
+  parts.push({ text: prompt });
 
-  return await callGemini(parts, 512);
+  const result = await callGemini(parts, 2048);
+  return result.questions as QAQuestion[];
+}
+
+/* ---------- Grade All Live Q&A Answers ---------- */
+
+const GRADE_ALL_PROMPT = `You are an expert presentation coach grading a student's Q&A performance.
+
+The student was asked {COUNT} questions about their presentation. Grade each answer individually.
+
+For each question-answer pair, evaluate:
+- Accuracy: Does the answer correctly address the question based on the slide content?
+- Completeness: Did the student cover all key aspects?
+- Clarity: Was the answer clear and well-articulated?
+
+Score each answer 0–10 and provide:
+- feedback: 2-3 sentences on how well they answered
+- suggested_answer: A model answer for that question
+
+Return this exact JSON:
+{
+  "grades": [
+    {
+      "question": "The question text",
+      "answer": "What the student said",
+      "score": 7,
+      "feedback": "2-3 sentences on how well they answered",
+      "suggested_answer": "A model answer for this question"
+    }
+  ]
+}
+
+IMPORTANT: Return exactly {COUNT} grades in the same order as the questions below.`;
+
+export async function gradeLiveAnswers(
+  qaPairs: { question: string; slide_ref: string; answer: string }[],
+  pdfBase64: string
+): Promise<LiveQAGrade[]> {
+  const prompt = GRADE_ALL_PROMPT.replace(
+    /\{COUNT\}/g,
+    String(qaPairs.length)
+  );
+
+  const pairsText = qaPairs
+    .map(
+      (p, i) =>
+        `--- Question ${i + 1} (${p.slide_ref}) ---\nQ: ${p.question}\nA: ${p.answer || "(No answer provided)"}`
+    )
+    .join("\n\n");
+
+  const textContent = `${prompt}\n\n${pairsText}`;
+
+  const cleanBase64 = pdfBase64
+    ? pdfBase64
+        .replace(/^data:application\/pdf;base64,/, "")
+        .replace(/\s/g, "")
+    : "";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [];
+  if (cleanBase64) {
+    parts.push({
+      inline_data: {
+        mime_type: "application/pdf",
+        data: cleanBase64,
+      },
+    });
+  }
+  parts.push({ text: textContent });
+
+  try {
+    const result = await callGemini(parts, 4096);
+    return result.grades as LiveQAGrade[];
+  } catch (e) {
+    if (cleanBase64 && e instanceof Error && e.message.includes("400")) {
+      console.warn("Gemini rejected grading with PDF, retrying without slides");
+      return ((await callGemini([{ text: textContent }], 4096)) as { grades: LiveQAGrade[] }).grades;
+    }
+    throw e;
+  }
 }
 
 /* ---------- Legacy function (kept for backwards compat) ---------- */
