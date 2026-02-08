@@ -3,7 +3,7 @@ import { generateCoachSpeech } from "@/services/elevenlabs";
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, mode } = await request.json();
+    const { text, mode, voiceId } = await request.json();
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
 
     const blob = await generateCoachSpeech(
       text,
-      mode ?? "recap"
+      mode ?? "recap",
+      voiceId
     );
 
     return new NextResponse(blob, {
