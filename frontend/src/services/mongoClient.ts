@@ -11,10 +11,32 @@ const globalForMongo = globalThis as unknown as {
   _mongoClientPromise?: Promise<MongoClient>;
 };
 
-if (!globalForMongo._mongoClient) {
-  globalForMongo._mongoClient = new MongoClient(MONGODB_URI);
-  globalForMongo._mongoClientPromise = globalForMongo._mongoClient.connect();
+function createClient(): Promise<MongoClient> {
+  const client = new MongoClient(MONGODB_URI!, {
+    tls: true,
+    serverSelectionTimeoutMS: 10000,
+    connectTimeoutMS: 10000,
+    retryWrites: true,
+    retryReads: true,
+  });
+
+  const promise = client.connect().catch((err) => {
+    // If connection fails, clear the cache so the next request retries
+    console.error("[MongoDB] Connection failed, will retry on next request:", err.message);
+    globalForMongo._mongoClient = undefined;
+    globalForMongo._mongoClientPromise = undefined;
+    throw err;
+  });
+
+  globalForMongo._mongoClient = client;
+  globalForMongo._mongoClientPromise = promise;
+
+  return promise;
+}
+
+if (!globalForMongo._mongoClientPromise) {
+  createClient();
 }
 
 export const clientPromise: Promise<MongoClient> =
-  globalForMongo._mongoClientPromise!;
+  globalForMongo._mongoClientPromise ?? createClient();
