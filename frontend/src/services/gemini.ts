@@ -391,42 +391,76 @@ ${answerTranscript}`;
   }
 }
 
-/* ---------- Conversational Q&A ---------- */
+/* ---------- Conversational Q&A (AI-asks-first) ---------- */
 
-const CONVERSATIONAL_QA_PROMPT = `You are a friendly, curious audience member who just watched a presentation. You're having a casual conversation with the presenter about their talk.
+export interface ConversationalQAInput {
+  mode: "FIRST_QUESTION" | "NEXT_TURN";
+  askedQuestions: string[];
+  lastQuestion?: string;
+  presenterAnswer?: string;
+  history: { role: "user" | "assistant"; text: string }[];
+  pdfBase64?: string;
+}
 
-Rules:
-- Keep responses to 1-3 sentences. Be concise and conversational.
-- Use contractions and short sentences — this will be spoken aloud.
-- If the user's answer is good, acknowledge it briefly and ask a follow-up or move on.
-- If the answer is unclear, gently ask for clarification.
-- Reference specific slides or content from the presentation when relevant.
-- Be encouraging but honest. Don't be overly formal.
-- Do NOT use markdown, bullet points, or any formatting. Just plain spoken text.
+const LIVE_QA_PROMPT = `You are a curious audience member who just watched a presentation. You ask the presenter questions about their talk to test their understanding.
 
-Return this exact JSON:
-{ "answer": "Your spoken response here" }`;
+RULES:
+- Ask broad questions first, then drill down based on answers.
+- Questions MUST be grounded in the PDF slides/topics provided.
+- NEVER repeat any question from the "ALREADY ASKED" list — hard constraint.
+- Keep spoken text short: 1-2 concise sentences max.
+- Use contractions and short sentences — this will be spoken aloud via TTS.
+- Do NOT use markdown, bullet points, or any formatting. Plain spoken text only.
+- If the presenter's transcript seems unclear, ask a confirmation question (e.g., "Did you mean X?") instead of continuing.
+
+FOR FIRST_QUESTION mode:
+- Generate only a question (no feedback).
+- Return: { "question": "Your question here" }
+
+FOR NEXT_TURN mode:
+- First provide brief feedback on the presenter's answer (1 sentence, encouraging but honest).
+- Then provide the next question.
+- Return: { "feedback": "Brief feedback", "question": "Next question" }`;
 
 export async function conversationalQA(
-  utterance: string,
-  history: { role: "user" | "assistant"; text: string }[],
-  pdfBase64?: string
-): Promise<{ answer: string }> {
+  input: ConversationalQAInput
+): Promise<{ question: string; feedback?: string }> {
+  const { mode, askedQuestions, lastQuestion, presenterAnswer, history, pdfBase64 } = input;
+
   const historyText = history
     .map((h) => `${h.role === "user" ? "Presenter" : "You"}: ${h.text}`)
     .join("\n");
 
-  const textContent = `${CONVERSATIONAL_QA_PROMPT}
+  const alreadyAsked = askedQuestions.length > 0
+    ? askedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+    : "(none yet)";
+
+  let modeSection = "";
+  if (mode === "FIRST_QUESTION") {
+    modeSection = `MODE: FIRST_QUESTION
+Generate the first question for this presentation. No feedback needed.`;
+  } else {
+    modeSection = `MODE: NEXT_TURN
+Last question asked: "${lastQuestion || "(unknown)"}"
+Presenter's answer: "${presenterAnswer || "(no answer / skipped)"}"
+Provide brief feedback on their answer, then ask a new question.`;
+  }
+
+  const textContent = `${LIVE_QA_PROMPT}
+
+---
+
+${modeSection}
+
+---
+
+ALREADY ASKED (do NOT repeat):
+${alreadyAsked}
 
 ---
 
 CONVERSATION SO FAR:
-${historyText || "(This is the start of the conversation)"}
-
----
-
-PRESENTER JUST SAID:
-${utterance}`;
+${historyText || "(This is the start of the conversation)"}`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parts: any[] = [{ text: textContent }];

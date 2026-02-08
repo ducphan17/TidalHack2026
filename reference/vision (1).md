@@ -1,52 +1,106 @@
-# STEP 1: VISION (AI proposes)
-
-```text
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│  STEP 1: VISION                                                                       │
-│  Owner: Architect (AI)                                                                │
-│  Goal: Define a “human-like” live voice Q&A + slide-aware coach                        │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                        │
-│  Homeowner:                                                                            │
-│  "I want natural, handsfree Q&A with barge-in (like a real conversation).              │
-│   The AI should reference my slide text + slide images (“as you mention on slide A…”). │
-│   Save decks + Q&A sessions to Mongo. Redact PII in transcripts."                      │
-│                                                                                        │
-│  Architect:                                                                            │
-│  "I propose a LIVE VOICE COACH that runs as a voice agent loop:                         │
-│                                                                                        │
-│   🧠 LIVE EXPERIENCE                                                                    │
-│   - Always-listening mic                                                               │
-│   - Live captions (partial transcript)                                                 │
-│   - End-of-turn detection (AI waits until you finish, but feels natural)               │
-│   - AI answers immediately (streamed text + streamed voice)                            │
-│   - Barge-in: if user starts speaking, AI stops speaking instantly                     │
-│                                                                                        │
-│   🖼️ SLIDE-AWARE EXPLANATIONS                                                          │
-│   - The AI can “point to” the deck: explain a chart, a bullet, or a diagram            │
-│   - Supports: “Explain slide 7”, “What does this chart mean?”, “Go back to slide A”    │
-│                                                                                        │
-│   🔒 PRIVACY & STORAGE                                                                  │
-│   - Redact PII (emails/phones) before saving transcript/recap                          │
-│   - Save deck assets + sessions to Mongo for replay and progress tracking              │
-│                                                                                        │
-│   🎙️ SOUND HUMAN (without imitating any real person)                                  │
-│   - Use a unique coach voice (non-default voice)                                       │
-│   - Convert feedback into spoken script (short lines + pauses + contractions)          │
-│   - Stream TTS so it feels responsive                                                   │
-│                                                                                        │
-│   ✅ MVP DELIVERY                                                                       │
-│   - Handsfree + barge-in                                                                │
-│   - Slide text + slide image grounding                                                  │
-│   - Session saved to Mongo + PII redaction                                               │
-│                                                                                        │
-│   Then we add: stronger slide retrieval, better recap scoring, and richer analytics."  │
-│                                                                                        │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-## Outcomes
-- **Feels like a real voice conversation** (handsfree, barge-in)
-- **Grounded answers** (“as you mention on slide …” with text + image context)
-- **Session memory** (Mongo) + **privacy** (PII redaction before storage)
-- **Human-sounding coach** through script formatting + streaming TTS (no celebrity imitation)
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 1: VISION                                                     │
+│  Owner: Architect (AI)                                              │
+│  Goal: Propose an improved Live Q&A experience using proven patterns│
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Homeowner: "I already have Live Q&A working. I want to improve it: │
+│  fix transcript bugs, make captions stable, and make the flow feel  │
+│  like real Q&A (AI asks first, follow-ups, barge-in)."              │
+│                                                                     │
+│  Architect:                                                         │
+│  "For improving your existing Live Q&A, I propose this focused      │
+│  vision (works for ~80% of voice-first Q&A loops):                  │
+│                                                                     │
+│  ✅ GOAL                                                            │
+│  Turn your current loop into a reliable, realistic Q&A simulator:   │
+│   • Turn-based speech capture (no accumulation)                      │
+│   • Stable live captions (final text never rewrites)                 │
+│   • AI-asks-first mode (moderator-driven Q&A)                         │
+│   • Barge-in that always wins (user voice interrupts instantly)      │
+│   • Enforced session limits (maxQuestions)                           │
+│                                                                     │
+│  ────────────────────────────────────────────────────────────────   │
+│  📐 IMPROVED LIVE Q&A FLOW (state machine)                           │
+│                                                                     │
+│   IDLE                                                              │
+│    → START_SESSION                                                  │
+│                                                                     │
+│   AI_ASKING  (AI picks a question grounded in slides + history)      │
+│    → AI_SPEAKING (ElevenLabs plays the question)                     │
+│    → (audio ended OR user barge-in)                                  │
+│                                                                     │
+│   USER_ANSWERING (listen for one “turn”)                             │
+│    → live captions update                                            │
+│    → silence detected (end-of-turn)                                  │
+│                                                                     │
+│   AI_THINKING (Gemini evaluates answer + generates next question)    │
+│    → AI_SPEAKING (ElevenLabs plays feedback + next question)         │
+│    → loop                                                           │
+│                                                                     │
+│   DONE (maxQuestions reached OR user ends)                           │
+│                                                                     │
+│  BARGE-IN RULE (always consistent):                                  │
+│   - If user speaks during AI_SPEAKING:                               │
+│       pause audio + abort in-flight fetches + USER_ANSWERING         │
+│                                                                     │
+│  ────────────────────────────────────────────────────────────────   │
+│  🧠 QUESTIONING BEHAVIOR (feels like real life)                      │
+│                                                                     │
+│   AI asks first, then adapts:                                        │
+│   • Broad opener (what / why / who benefits)                         │
+│   • Slide-grounded follow-up (“On the latency slide…”)               │
+│   • Clarifier when vague (“Can you give a concrete example?”)        │
+│   • Pushback sometimes (“What if the PDF has PII?”)                  │
+│                                                                     │
+│  Question sources (in priority order):                               │
+│   1) Slide topics + claims (PDF grounding)                            │
+│   2) User’s last answer (ask what’s missing)                          │
+│   3) Common audience questions (risk, cost, privacy, latency)         │
+│                                                                     │
+│  ────────────────────────────────────────────────────────────────   │
+│  🎙️ SPEECH CAPTURE VISION (fix your current bugs)                    │
+│                                                                     │
+│  A) Turn isolation (fix accumulation forever)                        │
+│   - Each user answer is a “turn” with its own buffers                │
+│   - On new turn: reset buffers (soft reset or hard restart)          │
+│   - Submit ONLY this turn’s final text                               │
+│                                                                     │
+│  B) No stale callbacks                                               │
+│   - Store onResult in a ref; recognition always calls latest handler │
+│                                                                     │
+│  C) Captions that look stable                                        │
+│   - Render FinalText + InterimText separately                         │
+│   - Never mutate FinalText after it’s committed                       │
+│                                                                     │
+│  D) Accuracy path (practical upgrade)                                │
+│   - Web Speech = low-latency captions (UI)                            │
+│   - Optional: MediaRecorder + server STT = final answer text (AI)     │
+│                                                                     │
+│  ────────────────────────────────────────────────────────────────   │
+│  🧾 SERVER CONTRACT (simple + robust)                                │
+│                                                                     │
+│  Replace “answer-only” with turn outputs:                            │
+│   Request: { sessionId, question, userAnswer, history, pdfBase64 }   │
+│   Response: {                                                       │
+│     feedback: string,                                                │
+│     score: number,                                                   │
+│     nextQuestion: string,                                            │
+│     updatedHistory: [...]                                            │
+│   }                                                                 │
+│                                                                     │
+│  This enables AI-asks-first + follow-ups without extra endpoints.    │
+│                                                                     │
+│  ────────────────────────────────────────────────────────────────   │
+│  ✅ DEFINITION OF “IMPROVED” (acceptance)                            │
+│                                                                     │
+│   • Each round submits ONLY the newest utterance (no accumulation)   │
+│   • Captions don’t “fix” old sentences; final stays final            │
+│   • Barge-in is reliable (interrupt anytime, no stuck states)        │
+│   • maxQuestions is enforced (session ends cleanly)                   │
+│   • AI-asks-first produces realistic Q&A sequences from the PDF      │
+│                                                                     │
+│  If you share your current hook files in STEP 2, I’ll tailor the     │
+│  Blueprint to your exact code and lock the final state machine.      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
