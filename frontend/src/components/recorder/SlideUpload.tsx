@@ -57,7 +57,7 @@ export function SlideUpload({ onSlidesUploaded, disabled }: SlideUploadProps) {
   return (
     <Card
       variant="outlined"
-      className="border-dashed !bg-[#A1C0D7]/80 !border-[#A1C0D7]/60"
+      className="border-dashed !bg-[#A1C0D7]/80 !border-[#A1C0D7]/60 w-full"
     >
       <label className="block cursor-pointer">
         <input

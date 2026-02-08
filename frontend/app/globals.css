@@ -12,10 +12,12 @@
   --accent-light: rgba(119, 165, 198, 0.15);
 }
 
+.panel-hover-shadow {
+  box-shadow: inset 0 0 0 0px rgba(255, 255, 255, 0);
+  transition: box-shadow 0.3s;
+}
 .panel-hover-shadow:hover {
-  box-shadow: 0 0 40px -5px rgba(236, 72, 153, 0.45),
-    0 0 25px -8px rgba(219, 39, 119, 0.3),
-    0 0 15px -10px rgba(244, 114, 182, 0.2);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.9);
 }
 
 @theme inline {
@@ -83,4 +85,3 @@ body {
 .animate-recording-panel-enter {
   animation: recording-panel-enter 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-

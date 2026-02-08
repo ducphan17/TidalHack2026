@@ -79,20 +79,20 @@ export function ScoreBreakdownPanel({
 
   return (
     <Card>
-      <h3 className="font-semibold text-zinc-100 mb-2">
+      <h3 className="text-lg font-semibold text-zinc-100 mb-2">
         Why this score?
       </h3>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">
+      <p className="text-sm text-white mb-3">
         Criteria weights:
       </p>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-400 mb-4">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-white mb-4">
         {criteriaSummary.map(({ label, pct }) => (
           <span key={label}>
             {label}: {pct}%
           </span>
         ))}
       </div>
-      <p className="text-sm text-zinc-400 mb-4">
+      <p className="text-sm text-white mb-4">
         {formulaText}
       </p>
       <div className="space-y-4">
@@ -110,13 +110,13 @@ export function ScoreBreakdownPanel({
               </span>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+              <div className="text-sm font-medium text-white flex items-center gap-2">
                 {label}
-                <span className="text-xs font-normal text-zinc-400">
+                <span className="text-xs font-normal text-white">
                   ({(weight * 100)}%)
                 </span>
               </div>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">
+              <p className="text-sm text-white mt-0.5">
                 {rationale}
               </p>
             </div>

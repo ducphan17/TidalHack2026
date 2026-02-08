@@ -181,18 +181,18 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
     <div className="space-y-6">
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100">
+          <h3 className="text-lg font-semibold text-zinc-100">
             Q&A Practice
           </h3>
-          <span className="text-sm text-zinc-500">
+          <span className="text-sm text-white/70">
             Question {currentIndex + 1} of {questions.length}
           </span>
         </div>
 
-        <p className="text-zinc-700 dark:text-zinc-300 mb-2">
+        <p className="text-white mb-2">
           {currentQuestion.question}
         </p>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-white/70 mb-4">
           Ref: {currentQuestion.slide_ref}
         </p>
 
@@ -226,7 +226,7 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
         {qaStep === "grading" && (
           <div className="flex items-center gap-3 py-4">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#77A5C6] border-t-transparent" />
-            <span className="text-sm text-zinc-600 dark:text-zinc-400">
+            <span className="text-sm text-white">
               Grading your answer...
             </span>
           </div>
@@ -235,17 +235,17 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
 
       {qaStep === "feedback" && currentFeedback && (
         <Card>
-          <h4 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
+          <h4 className="font-semibold text-zinc-100 mb-2">
             Feedback — Score: {currentFeedback.score}/10
           </h4>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3">
+          <p className="text-sm text-white mb-3">
             {currentFeedback.feedback}
           </p>
           <div className="mb-4">
-            <h5 className="text-xs font-medium text-zinc-500 mb-1">
+            <h5 className="text-xs font-medium text-white/70 mb-1">
               Suggested answer
             </h5>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="text-sm text-white">
               {currentFeedback.suggested_answer}
             </p>
           </div>

@@ -39,7 +39,7 @@ export function AudioLevelMeter({ stream }: AudioLevelMeterProps) {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-zinc-500 w-8">Mic</span>
+      <span className="text-xs text-white/70 w-8">Mic</span>
       <div className="flex-1 h-3 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-75"

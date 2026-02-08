@@ -73,26 +73,15 @@ function toSpokenCoachScript(raw: string, mode: CoachMode): string {
     .filter(Boolean);
 
   if (mode === "recap") {
-    return [
-      "[calm] Alright—quick recap. [pause]",
-      ...paragraphs.map((p) => `${p}\n[pause]`),
-      "[encouraging] Want to run it once more with one small tweak?",
-    ].join("\n\n");
+    return paragraphs.map((p) => p).join("\n\n");
   }
 
   if (mode === "question") {
-    return [
-      "[friendly] Here's a practice question. [pause]",
-      ...paragraphs.map((p) => `${p}\n[pause]`),
-    ].join("\n\n");
+    return paragraphs.map((p) => p).join("\n\n");
   }
 
   // qa_feedback
-  return [
-    "[supportive] Here's feedback on that answer. [pause]",
-    ...paragraphs.map((p) => `${p}\n[pause]`),
-    "[encouraging] Try again—same question, but slower and clearer.",
-  ].join("\n\n");
+  return paragraphs.map((p) => p).join("\n\n");
 }
 
 export const AVAILABLE_VOICES = [

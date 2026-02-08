@@ -19,7 +19,7 @@ import { QAPanel, LiveQAPanel } from "@/components/qa";
 import { ProgressChart, type ProgressDataPoint } from "@/components/charts";
 import { Card, Button } from "@/components/shared";
 import { useMedia } from "@/hooks";
-import type { PresentationReport, QAQuestion, QAFeedback } from "@/services/gemini";
+import type { PresentationReport, QAQuestion, QAFeedback, LiveQAGrade } from "@/services/gemini";
 
 type Step =
   | "upload"
@@ -47,6 +47,7 @@ export default function MeetingRoom() {
   const [feedback, setFeedback] = useState<PresentationReport | null>(null);
   const [qaPack, setQaPack] = useState<QAQuestion[] | null>(null);
   const [qaResults, setQaResults] = useState<QAFeedback[]>([]);
+  const [liveQaGrades, setLiveQaGrades] = useState<LiveQAGrade[]>([]);
   const [history, setHistory] = useState<ProgressDataPoint[]>([]);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [voiceCompare, setVoiceCompare] = useState<
@@ -324,6 +325,7 @@ export default function MeetingRoom() {
     setSessionId(null);
     setQaPack(null);
     setQaResults([]);
+    setLiveQaGrades([]);
     setTranscript(null);
     resetRecorder();
     hasStartedRecording.current = false;
@@ -345,6 +347,7 @@ export default function MeetingRoom() {
     setSessionId(null);
     setQaPack(null);
     setQaResults([]);
+    setLiveQaGrades([]);
     setTranscript(null);
     setPdfBase64("");
     setSlideCount(0);
@@ -416,7 +419,7 @@ export default function MeetingRoom() {
               initial="hidden"
               animate="visible"
               variants={panelDropVariants}
-              className="rounded-2xl backdrop-blur-xl bg-zinc-900/50 border border-zinc-700/50 transition-shadow duration-300 panel-hover-shadow"
+              className="rounded-2xl backdrop-blur-xl bg-zinc-900/30 border border-zinc-700/30 transition-shadow duration-300 panel-hover-shadow"
             >
                 <button
                   type="button"
@@ -427,7 +430,7 @@ export default function MeetingRoom() {
                     Upload slides, then record your voice
                   </h2>
                   <svg
-                    className={`w-5 h-5 text-zinc-400 shrink-0 transition-transform ${stepsExpanded ? "rotate-180" : ""}`}
+                    className={`w-5 h-5 text-white shrink-0 transition-transform ${stepsExpanded ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -437,7 +440,7 @@ export default function MeetingRoom() {
                 </button>
                 {stepsExpanded && (
                   <div className="px-8 pb-6 pl-12">
-                    <p className="text-zinc-400 max-w-md">
+                    <p className="text-white max-w-md">
                       1. Upload your PDF slides
                       <br />
                       2. Record yourself presenting (voice only)
@@ -455,14 +458,16 @@ export default function MeetingRoom() {
               variants={panelDropVariants}
               className="grid grid-cols-1 md:grid-cols-2 gap-6"
             >
-              <Card>
-                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+              <Card className="flex flex-col">
+                <h3 className="text-lg font-semibold text-zinc-100 mb-4">
                   Step 1: Upload slides
                 </h3>
-                <div className="pl-4 max-w-2xl">
+                <div className="flex-1 flex flex-col items-center justify-center gap-4">
                   <SlideUpload onSlidesUploaded={handleSlidesUploaded} />
+                </div>
+                <div className="mt-4 text-center min-h-6">
                   {slideCount > 0 && (
-                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                    <p className="text-sm text-green-400">
                       {slideCount} slide{slideCount !== 1 ? "s" : ""} detected
                     </p>
                   )}
@@ -470,7 +475,7 @@ export default function MeetingRoom() {
               </Card>
 
               <Card>
-                <h3 className="font-semibold text-zinc-100 mb-4">
+                <h3 className="text-lg font-semibold text-zinc-100 mb-4">
                   Step 2: Record
                 </h3>
                 <div className="flex flex-col items-center gap-4 py-4">
@@ -511,7 +516,7 @@ export default function MeetingRoom() {
             >
               <Card className="w-full animate-recording-panel-enter">
                 <div className="flex flex-col items-center gap-6 py-8">
-                  <p className="flex items-center gap-2 text-sm font-medium text-zinc-400">
+                  <p className="flex items-center gap-2 text-sm font-medium text-white">
                     <span className="flex h-2 w-2 animate-pulse rounded-full bg-red-500" />
                     Recording voice...
                   </p>
@@ -522,15 +527,15 @@ export default function MeetingRoom() {
                     onStart={handleStartRecording}
                     onStop={handleStopRecording}
                   />
-                  <p className="text-xs text-zinc-500">Tap the circle to stop</p>
+                  <p className="text-xs text-white/70">Tap the circle to stop</p>
                 </div>
               </Card>
 
               {pdfBase64 && (
                 <div
-                  className={`w-full mt-6 rounded-xl border border-zinc-700/50 bg-zinc-900 p-6 shadow-lg transition-opacity duration-300 ${isRecording ? "opacity-40" : "opacity-100"}`}
+                  className="w-full mt-6 rounded-xl border border-zinc-700/50 bg-zinc-900 p-6 shadow-lg"
                 >
-                  <h3 className="font-semibold text-zinc-100 mb-4">
+                  <h3 className="text-lg font-semibold text-zinc-100 mb-4">
                     Your Slides
                   </h3>
                   <iframe
@@ -551,7 +556,7 @@ export default function MeetingRoom() {
               <button
                 type="button"
                 onClick={handleCancelToDashboard}
-                className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
                 aria-label="Cancel and return to dashboard"
               >
                 <svg
@@ -585,7 +590,7 @@ export default function MeetingRoom() {
                   </span>
                   <span className="font-medium">Recording complete</span>
                 </div>
-                <p className="text-sm text-zinc-400 text-center max-w-sm">
+                <p className="text-sm text-white text-center max-w-sm">
                   Your recording is ready. Re-record or start analysis to get
                   feedback.
                 </p>
@@ -610,79 +615,88 @@ export default function MeetingRoom() {
 
         {step === "analyzing" && (
           <section className="flex flex-col items-center justify-center py-16">
-            <div className="w-full max-w-xs space-y-3">
-              {ANALYZE_STEPS.map(({ key, label }) => {
-                const isCompleted = completedSteps.has(key);
-                const isCurrent = analyzeStep === key;
-                return (
-                  <div
-                    key={key}
-                    className="flex items-center gap-3 text-sm"
-                  >
-                    {isCompleted ? (
-                      <svg
-                        className="h-5 w-5 shrink-0 text-green-500"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
+            <Card className="w-full max-w-sm">
+              <div className="flex flex-col items-center gap-4 py-4">
+                <div className="space-y-3">
+                  {ANALYZE_STEPS.map(({ key, label }) => {
+                    const isCompleted = completedSteps.has(key);
+                    const isCurrent = analyzeStep === key;
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center gap-3 text-sm"
                       >
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    ) : isCurrent ? (
-                      <div className="h-5 w-5 shrink-0 flex items-center justify-center">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                        {isCompleted ? (
+                          <svg
+                            className="h-5 w-5 shrink-0 text-green-500"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        ) : isCurrent ? (
+                          <div className="h-5 w-5 shrink-0 flex items-center justify-center">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                          </div>
+                        ) : (
+                          <div className="h-5 w-5 shrink-0 rounded-full border-2 border-zinc-600" />
+                        )}
+                        <span
+                          className={
+                            isCompleted
+                              ? "text-green-400 font-medium"
+                              : isCurrent
+                              ? "text-zinc-100 font-medium"
+                              : "text-white"
+                          }
+                        >
+                          {label}
+                        </span>
                       </div>
-                    ) : (
-                      <div className="h-5 w-5 shrink-0 rounded-full border-2 border-zinc-300 dark:border-zinc-600" />
-                    )}
-                    <span
-                      className={
-                        isCompleted
-                          ? "text-green-700 dark:text-green-600 font-medium"
-                          : isCurrent
-                          ? "text-black dark:text-zinc-100 font-medium"
-                          : "text-black dark:text-zinc-300"
-                      }
-                    >
-                      {label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="mt-4 text-xs text-white">
-              This may take 15-30 seconds
-            </p>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-white/70">
+                  This may take 15-30 seconds
+                </p>
+              </div>
+            </Card>
           </section>
         )}
 
         {step === "feedback" && feedback && (
           <section className="space-y-8">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="relative">
-                <ScoreCard score={feedback.score} label="Overall score" />
-                <span className="absolute top-3 right-3 rounded-full bg-[#77A5C6]/20 px-2.5 py-0.5 text-xs font-medium text-[#77A5C6] dark:text-[#77A5C6]">
+            <div className="grid gap-4 sm:grid-cols-2 items-stretch">
+              <div className="relative flex">
+                <ScoreCard score={feedback.score} label="Overall score" className="flex-1 flex flex-col justify-center" />
+                <span className="absolute top-3 right-3 rounded-full bg-[#77A5C6]/20 px-2.5 py-0.5 text-xs font-medium text-[#77A5C6]">
                   Attempt #{attemptNumber}
                 </span>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col justify-center gap-3">
                 <Button
                   variant="secondary"
                   onClick={handlePracticeAgain}
-                  className="bg-white text-[var(--heading)] hover:bg-zinc-100 border border-zinc-200 shadow-sm"
+                  className="bg-[#578EC5]! text-white! border-2 border-transparent hover:border-white transition-all shadow-lg shadow-black/25"
                 >
                   Practice Again
                 </Button>
-                <Button variant="secondary" onClick={handleReset}>
+                <Button
+                  variant="secondary"
+                  onClick={handleReset}
+                  className="bg-[#578EC5]! text-white! border-2 border-transparent hover:border-white transition-all shadow-lg shadow-black/25"
+                >
                   New Presentation
                 </Button>
                 {sessionId && (
                   <Button
                     variant="secondary"
                     onClick={() => setStep("live_qa")}
+                    className="bg-[#578EC5]! text-white! border-2 border-transparent hover:border-white transition-all shadow-lg shadow-black/25"
                   >
                     Live Q&A
                   </Button>
@@ -699,22 +713,30 @@ export default function MeetingRoom() {
 
             {voiceCompare.length > 0 && (
               <Card>
-                <h3 className="font-semibold text-zinc-100 mb-4">
+                <h3 className="text-lg font-semibold text-zinc-100 mb-3">
                   Choose Coach Voice
                 </h3>
-                <div className="space-y-3">
-                  {voiceCompare.map((v) => (
-                    <div key={v.model} className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 w-36 shrink-0">
-                        {v.label}
-                      </span>
-                      <VoicePlayer audioUrl={v.url} />
-                    </div>
-                  ))}
+                <div className="flex gap-6 items-start">
+                  <div className="flex items-center gap-3 shrink-0">
+                    <select
+                      value={voiceUrl ?? ""}
+                      onChange={(e) => setVoiceUrl(e.target.value)}
+                      className="rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-white"
+                    >
+                      {voiceCompare.map((v) => (
+                        <option key={v.model} value={v.url}>
+                          {v.label}
+                        </option>
+                      ))}
+                    </select>
+                    {voiceUrl && (
+                      <VoicePlayer audioUrl={voiceUrl} label="Play" />
+                    )}
+                  </div>
+                  <p className="text-sm text-white/70 flex-1 pt-1.5">
+                    {feedback.summary}
+                  </p>
                 </div>
-                <p className="mt-3 text-xs text-zinc-500">
-                  {feedback.summary}
-                </p>
               </Card>
             )}
             {!voiceCompare.length && voiceUrl && (
@@ -723,10 +745,10 @@ export default function MeetingRoom() {
 
             {transcript && (
               <Card>
-                <h3 className="font-semibold text-zinc-100 mb-2">
+                <h3 className="text-lg font-semibold text-zinc-100 mb-2">
                   What we heard
                 </h3>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">
+                <p className="text-sm text-white whitespace-pre-wrap">
                   {transcript}
                 </p>
               </Card>
@@ -736,7 +758,7 @@ export default function MeetingRoom() {
 
             {qaResults.length > 0 && (
               <Card>
-                <h3 className="font-semibold text-zinc-100 mb-4">
+                <h3 className="text-lg font-semibold text-zinc-100 mb-4">
                   Q&A Results
                 </h3>
                 <div className="space-y-2">
@@ -745,7 +767,7 @@ export default function MeetingRoom() {
                       key={i}
                       className="flex items-center justify-between text-sm"
                     >
-                      <span className="text-zinc-600 dark:text-zinc-400">
+                      <span className="text-white">
                         Question {i + 1}
                       </span>
                       <span className="font-medium">{r.score}/10</span>
@@ -755,8 +777,35 @@ export default function MeetingRoom() {
               </Card>
             )}
 
+            {liveQaGrades.length > 0 && (
+              <Card>
+                <h3 className="text-lg font-semibold text-zinc-100 mb-4">
+                  Live Q&A Results
+                </h3>
+                <div className="space-y-2">
+                  {liveQaGrades.map((g, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span className="text-white truncate mr-2">
+                        Q{i + 1}: {g.question}
+                      </span>
+                      <span className="font-medium shrink-0">{g.score}/10</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-zinc-700 pt-2 mt-2 flex items-center justify-between text-sm font-medium">
+                    <span className="text-white">Average</span>
+                    <span>
+                      {(liveQaGrades.reduce((s, g) => s + g.score, 0) / liveQaGrades.length).toFixed(1)}/10
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             <Card>
-              <h3 className="font-semibold text-zinc-100 mb-4">
+              <h3 className="text-lg font-semibold text-zinc-100 mb-4">
                 Progress
               </h3>
               <ProgressChart data={history} />
@@ -775,7 +824,10 @@ export default function MeetingRoom() {
         {step === "live_qa" && sessionId && (
           <LiveQAPanel
             sessionId={sessionId}
-            onEnd={() => setStep("feedback")}
+            onEnd={(grades) => {
+              setLiveQaGrades(grades);
+              setStep("feedback");
+            }}
           />
         )}
       </main>

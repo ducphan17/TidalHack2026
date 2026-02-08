@@ -13,7 +13,7 @@ export function Card({
   ...props
 }: CardProps) {
   const base = "rounded-xl p-6 transition-shadow duration-300 panel-hover-shadow";
-  const panelBg = "backdrop-blur-xl bg-zinc-900/50 border-zinc-700/50";
+  const panelBg = "backdrop-blur-xl bg-zinc-900/30 border-zinc-700/30";
 
   if (variant === "outlined") {
     return (
