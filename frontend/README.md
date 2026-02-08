@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Present AI
 
-## Getting Started
+AI-powered presentation coaching for students. Record yourself presenting and get instant feedback on filler words, pace, pauses, and body language.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Record** – Webcam + microphone via MediaRecorder API
+- **Transcript** – Real-time speech-to-text via Web Speech API
+- **Analyze** – Multimodal analysis (Gemini 2.0 Flash)
+- **Feedback** – Score, filler words, pace, pauses, improvements
+- **Voice coaching** – ElevenLabs (optional)
+- **Progress** – Track scores over time (Recharts)
+
+## Setup
+
+1. Copy `.env.example` to `.env.local`:
+   ```bash
+   cp .env.example .env.local
+   ```
+
+2. Add your API keys:
+   - **GEMINI_API_KEY** (required) – [Google AI Studio](https://aistudio.google.com/)
+   - **ELEVENLABS_API_KEY** (optional) – [ElevenLabs](https://elevenlabs.io/)
+   - **MONGODB_URI** (optional) – In-memory fallback when not set
+
+3. Run the dev server:
+   ```bash
+   npm run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000)
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx           # Meeting Room (main UI)
+│   └── api/
+│       ├── analyze/       # Video + transcript → Gemini analysis
+│       ├── history/       # GET/POST user scores
+│       └── voice/         # ElevenLabs proxy
+├── components/
+│   ├── recorder/          # Webcam, MediaRecorder, controls
+│   ├── feedback/          # Score, FeedbackList, VoicePlayer
+│   ├── charts/            # ProgressChart (Recharts)
+│   └── shared/            # Button, Card
+├── hooks/
+│   ├── useMedia.ts        # Camera/mic access
+│   └── useSpeech.ts       # Web Speech API
+└── services/
+    ├── gemini.ts          # Multimodal analysis
+    ├── elevenlabs.ts      # Voice generation
+    └── db.ts              # MongoDB / in-memory
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Frontend**: React 19, Next.js 16, Tailwind CSS
+- **Recording**: MediaRecorder API
+- **STT**: Web Speech API
+- **Analysis**: Gemini 2.0 Flash
+- **Voice**: ElevenLabs (optional)
+- **Charts**: Recharts
+- **Storage**: MongoDB Atlas (optional)
