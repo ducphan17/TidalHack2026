@@ -47,6 +47,9 @@ export default function MeetingRoom() {
   const [qaResults, setQaResults] = useState<QAFeedback[]>([]);
   const [history, setHistory] = useState<ProgressDataPoint[]>([]);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
+  const [voiceCompare, setVoiceCompare] = useState<
+    { model: string; label: string; url: string }[]
+  >([]);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [attemptNumber, setAttemptNumber] = useState(0);
   const [analyzeStep, setAnalyzeStep] = useState<AnalyzeStep | null>(null);
@@ -231,25 +234,37 @@ export default function MeetingRoom() {
         // History persistence is optional
       });
 
-      // Auto-play coach recap (non-blocking)
-      fetch("/api/voice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: resultData.presentation_report.summary,
-          mode: "recap",
-        }),
-      })
-        .then((voiceRes) => {
-          if (voiceRes.ok) return voiceRes.blob();
-          return null;
-        })
-        .then((audioBlob) => {
-          if (audioBlob) setVoiceUrl(URL.createObjectURL(audioBlob));
-        })
-        .catch(() => {
-          // Voice is optional
-        });
+      // Generate both voice options (Woman / Man) in parallel
+      const voices = [
+        { id: "9BWtsMINqrJLrRacOk9x", label: "Woman", icon: "👩" },
+        { id: "TX3LPaxmHKxFdv7VOQHJ", label: "Man", icon: "👨" },
+      ];
+      try {
+        const results = await Promise.allSettled(
+          voices.map(async (v) => {
+            const voiceRes = await fetch("/api/voice", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: data.presentation_report.summary,
+                mode: "recap",
+                voiceId: v.id,
+              }),
+            });
+            if (!voiceRes.ok) throw new Error("failed");
+            const audioBlob = await voiceRes.blob();
+            return { model: v.id, label: `${v.icon} ${v.label}`, url: URL.createObjectURL(audioBlob) };
+          })
+        );
+        const successful = results
+          .filter((r): r is PromiseFulfilledResult<{ model: string; label: string; url: string }> => r.status === "fulfilled")
+          .map((r) => r.value);
+        setVoiceCompare(successful);
+        // Default to Woman voice
+        if (successful.length > 0) setVoiceUrl(successful[0].url);
+      } catch {
+        // Voice is optional
+      }
     } catch (err) {
       console.error(err);
       setFeedback({
@@ -302,6 +317,7 @@ export default function MeetingRoom() {
   const handlePracticeAgain = useCallback(async () => {
     setFeedback(null);
     setVoiceUrl(null);
+    setVoiceCompare([]);
     setSessionId(null);
     setQaPack(null);
     setQaResults([]);
@@ -320,6 +336,7 @@ export default function MeetingRoom() {
     setStep("upload");
     setFeedback(null);
     setVoiceUrl(null);
+    setVoiceCompare([]);
     setSessionId(null);
     setQaPack(null);
     setQaResults([]);
@@ -631,14 +648,27 @@ export default function MeetingRoom() {
               </div>
             </div>
 
-            {feedback.score_breakdown && (
-              <ScoreBreakdownPanel
-                breakdown={feedback.score_breakdown}
-                relevanceGate={feedback.relevance_gate}
-              />
+            {voiceCompare.length > 0 && (
+              <Card>
+                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+                  Choose Coach Voice
+                </h3>
+                <div className="space-y-3">
+                  {voiceCompare.map((v) => (
+                    <div key={v.model} className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 w-36 shrink-0">
+                        {v.label}
+                      </span>
+                      <VoicePlayer audioUrl={v.url} />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-zinc-500">
+                  {feedback.summary}
+                </p>
+              </Card>
             )}
-
-            {voiceUrl && (
+            {!voiceCompare.length && voiceUrl && (
               <VoicePlayer audioUrl={voiceUrl} text={feedback.summary} />
             )}
 
