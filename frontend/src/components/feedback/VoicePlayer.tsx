@@ -6,9 +6,11 @@ import { Button, Card } from "@/components/shared";
 interface VoicePlayerProps {
   audioUrl: string | null;
   text?: string;
+  /** When provided, renders as a compact inline button (no Card wrapper) */
+  label?: string;
 }
 
-export function VoicePlayer({ audioUrl, text }: VoicePlayerProps) {
+export function VoicePlayer({ audioUrl, text, label }: VoicePlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -26,6 +28,7 @@ export function VoicePlayer({ audioUrl, text }: VoicePlayerProps) {
 
     if (!audioRef.current) {
       audioRef.current = new Audio(audioUrl);
+      audioRef.current.onended = () => setIsPlaying(false);
     }
 
     const audio = audioRef.current;
@@ -33,13 +36,29 @@ export function VoicePlayer({ audioUrl, text }: VoicePlayerProps) {
     if (isPlaying) {
       audio.pause();
       audio.currentTime = 0;
+      setIsPlaying(false);
     } else {
       audio.play();
+      setIsPlaying(true);
     }
-    setIsPlaying(!isPlaying);
   }, [audioUrl, isPlaying]);
 
   if (!audioUrl) return null;
+
+  // Compact inline mode — just a button with a label, no Card wrapper
+  if (label) {
+    return (
+      <Button
+        variant={isPlaying ? "secondary" : "primary"}
+        size="md"
+        onClick={togglePlay}
+        className="justify-start gap-2"
+      >
+        <span>{isPlaying ? "⏸" : "▶"}</span>
+        <span>{label}</span>
+      </Button>
+    );
+  }
 
   return (
     <Card className="flex items-center gap-4">
@@ -47,14 +66,16 @@ export function VoicePlayer({ audioUrl, text }: VoicePlayerProps) {
         variant={isPlaying ? "secondary" : "primary"}
         size="md"
         onClick={togglePlay}
+        className="justify-start gap-2"
       >
-        {isPlaying ? "⏸ Pause" : "▶ Play feedback"}
+        <span>{isPlaying ? "⏸" : "▶"}</span>
+        <span>{isPlaying ? "Pause" : "Play feedback"}</span>
       </Button>
       {text && (
         <div className="flex-1 min-w-0">
           <p
             ref={textRef}
-            className={`text-sm text-zinc-600 dark:text-zinc-400 ${!expanded ? "line-clamp-2" : ""}`}
+            className={`text-sm text-white ${!expanded ? "line-clamp-2" : ""}`}
           >
             {text}
           </p>

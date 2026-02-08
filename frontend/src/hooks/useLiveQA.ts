@@ -19,7 +19,7 @@ interface UseLiveQAOptions {
   sessionId: string;
   voiceId?: string;
   silenceTimeoutMs?: number;
-  maxQuestions?: number;
+  sessionDurationSec?: number;
   maxAnswerTimeSec?: number;
 }
 
@@ -46,8 +46,8 @@ function isSkipAnswer(text: string): boolean {
 export function useLiveQA({
   sessionId,
   voiceId = "9BWtsMINqrJLrRacOk9x",
-  silenceTimeoutMs = 1500,
-  maxQuestions = 5,
+  silenceTimeoutMs = 3000,
+  sessionDurationSec = 180,
   maxAnswerTimeSec = 300,
 }: UseLiveQAOptions) {
   const [state, setState] = useState<LiveQAState>("IDLE");
@@ -56,16 +56,23 @@ export function useLiveQA({
   const [userCaption, setUserCaption] = useState({ final: "", interim: "" });
   const [error, setError] = useState<string | null>(null);
   const [questionsAsked, setQuestionsAsked] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(sessionDurationSec);
 
   const stateRef = useRef<LiveQAState>("IDLE");
   const historyRef = useRef<LiveQAHistoryEntry[]>([]);
   const askedQuestionsRef = useRef<string[]>([]);
   const questionsAskedCountRef = useRef(0);
+  const sessionEndTimeRef = useRef(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
   const currentQuestionRef = useRef("");
+  const stoppedRef = useRef(false);
+  const deafUntilRef = useRef(0); // ignore mic input until this timestamp
+  const [isMuted, setIsMuted] = useState(false);
+  const isMutedRef = useRef(false);
 
   const updateState = useCallback((s: LiveQAState) => {
     stateRef.current = s;
@@ -95,31 +102,34 @@ export function useLiveQA({
     []
   );
 
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      isMutedRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // Web Speech API
   const {
-    isListening,
-    finalText,
-    interimText,
+    isListening: speechIsListening,
     error: speechError,
     startListening,
     stopListening,
+    ensureListening,
     beginTurn,
     getTurnFinalText,
   } = useSpeech({
     autoRestart: true,
     onResult: useCallback(
       (result: SpeechTurnResult) => {
-        if (stateRef.current === "AI_SPEAKING") {
-          // Barge-in: pause audio, keep AI text visible, switch to listening
-          if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current = null;
-          }
-          abortRef.current?.abort();
-          updateState("USER_ANSWERING");
-          // Don't beginTurn here — the speech result that triggered barge-in
-          // is already part of this turn
-        }
+        // Ignore mic input when muted
+        if (isMutedRef.current) return;
 
+        // Ignore mic input during deaf period (prevents AI audio bleed)
+        if (Date.now() < deafUntilRef.current) return;
+
+        // Only process speech when it's the user's turn to answer
         if (stateRef.current !== "USER_ANSWERING") return;
 
         setUserCaption({ final: result.finalText, interim: result.interimText });
@@ -131,47 +141,72 @@ export function useLiveQA({
         }
 
         if (result.hasFinalChunk && result.combinedText.trim()) {
-          // Start silence timer — submit after pause
+          const wordCount = result.combinedText.trim().split(/\s+/).length;
+          // 3+ words: normal silence timeout. Short answers: longer fallback (2x) so they still submit.
+          const timeout = wordCount >= 3 ? silenceTimeoutMs : silenceTimeoutMs * 2;
           silenceTimerRef.current = setTimeout(() => {
-            submitAnswer();
-          }, silenceTimeoutMs);
+            submitAnswerRef.current();
+          }, timeout);
         }
       },
-      // eslint-disable-next-line react-hooks/exhaustive-deps
       [silenceTimeoutMs]
     ),
   });
 
-  // Speak text via ElevenLabs, returns when audio finishes (or is interrupted)
-  const speakText = useCallback(
-    async (text: string, signal: AbortSignal): Promise<boolean> => {
+  // Use refs for functions to avoid stale closures
+  const askQuestionRef = useRef<(mode: "FIRST_QUESTION" | "NEXT_TURN", answer?: string) => void>(() => {});
+  const submitAnswerRef = useRef<() => void>(() => {});
+
+  // Speak text via ElevenLabs
+  async function speakTextFn(text: string): Promise<boolean> {
+    if (stoppedRef.current) return false;
+    
+    try {
+      ttsAbortRef.current = new AbortController();
+      const signal = ttsAbortRef.current.signal;
+
       const ttsRes = await fetch("/api/voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, mode: "recap", voiceId }),
+        body: JSON.stringify({ text, mode: "question", voiceId }),
         signal,
       });
-      if (!ttsRes.ok) throw new Error("TTS failed");
+
+      if (!ttsRes.ok) {
+        console.warn("[LiveQA] TTS failed, continuing without voice");
+        return true;
+      }
+
+      if (stoppedRef.current || signal.aborted) return false;
+
       const audioBlob = await ttsRes.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
 
       return new Promise<boolean>((resolve) => {
+        if (stoppedRef.current || signal.aborted) {
+          URL.revokeObjectURL(audioUrl);
+          resolve(false);
+          return;
+        }
+
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
 
         audio.onended = () => {
           URL.revokeObjectURL(audioUrl);
           audioRef.current = null;
-          resolve(true); // finished naturally
+          ttsAbortRef.current = null;
+          resolve(true);
         };
 
         audio.onerror = () => {
           URL.revokeObjectURL(audioUrl);
           audioRef.current = null;
+          ttsAbortRef.current = null;
           resolve(false);
         };
 
-        // If aborted before play
+        // Listen for abort
         signal.addEventListener("abort", () => {
           audio.pause();
           URL.revokeObjectURL(audioUrl);
@@ -181,17 +216,26 @@ export function useLiveQA({
 
         audio.play().catch(() => resolve(false));
       });
-    },
-    [voiceId]
-  );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        console.log("[LiveQA] TTS aborted (barge-in)");
+        return false;
+      }
+      console.warn("[LiveQA] Voice error:", err);
+      return true; // Continue without voice
+    }
+  }
 
-  // Fetch question/feedback from Gemini
-  const fetchTurn = useCallback(
-    async (
-      mode: "FIRST_QUESTION" | "NEXT_TURN",
-      presenterAnswer?: string,
-      signal?: AbortSignal
-    ) => {
+  // Core: ask a question (AI thinks → speaks → user answers)
+  askQuestionRef.current = async (
+    mode: "FIRST_QUESTION" | "NEXT_TURN",
+    presenterAnswer?: string
+  ) => {
+    try {
+      updateState("AI_THINKING");
+      stoppedRef.current = false;
+
+      // Fetch question from API
       const res = await fetch("/api/qa/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -203,166 +247,160 @@ export function useLiveQA({
           presenterAnswer: presenterAnswer || undefined,
           history: historyRef.current,
         }),
-        signal,
       });
+
       if (!res.ok) throw new Error("Failed to get response");
-      return (await res.json()) as { question: string; feedback?: string };
-    },
-    [sessionId]
-  );
+      const { question, feedback } = (await res.json()) as {
+        question: string;
+        feedback?: string;
+      };
 
-  // Core: ask a question (AI thinks → speaks → user answers)
-  const askQuestion = useCallback(
-    async (
-      mode: "FIRST_QUESTION" | "NEXT_TURN",
-      presenterAnswer?: string
-    ) => {
-      try {
-        updateState("AI_THINKING");
-        abortRef.current = new AbortController();
-        const signal = abortRef.current.signal;
+      if (stoppedRef.current) return;
 
-        const { question, feedback } = await fetchTurn(
-          mode,
-          presenterAnswer,
-          signal
-        );
+      // Track asked questions
+      askedQuestionsRef.current = [...askedQuestionsRef.current, question];
+      questionsAskedCountRef.current += 1;
+      setQuestionsAsked(questionsAskedCountRef.current);
 
-        // Track asked questions
-        askedQuestionsRef.current = [...askedQuestionsRef.current, question];
-        questionsAskedCountRef.current += 1;
-        setQuestionsAsked(questionsAskedCountRef.current);
+      // Speak feedback first (if any), then question
+      updateState("AI_SPEAKING");
 
-        // Speak feedback first (if any), then question
-        updateState("AI_SPEAKING");
-
-        if (feedback) {
-          addHistory({ role: "assistant", text: feedback });
-          setCurrentQuestion(feedback);
-          currentQuestionRef.current = feedback;
-          const finished = await speakText(feedback, signal);
-          if (!finished && stateRef.current === "USER_ANSWERING") {
-            // Barge-in happened during feedback — skip question speaking
-            return;
-          }
-        }
-
-        // Speak the question
-        addHistory({ role: "assistant", text: question });
-        setCurrentQuestion(question);
-        currentQuestionRef.current = question;
-
-        const finished = await speakText(question, signal);
-        if (!finished && stateRef.current === "USER_ANSWERING") {
-          // Barge-in during question — already listening
-          return;
-        }
-
-        // Check if we've hit max questions
-        if (questionsAskedCountRef.current >= maxQuestions) {
-          updateState("DONE");
-          stopListening();
-          return;
-        }
-
-        // Transition to listening
-        updateState("USER_ANSWERING");
-        setUserCaption({ final: "", interim: "" });
-        beginTurn();
-
-        // Start max answer timer
-        clearAnswerTimer();
-        answerTimerRef.current = setTimeout(() => {
-          if (stateRef.current === "USER_ANSWERING") {
-            submitAnswer();
-          }
-        }, maxAnswerTimeSec * 1000);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Something went wrong");
-        updateState("DONE");
+      if (feedback) {
+        addHistory({ role: "assistant", text: feedback });
+        setCurrentQuestion(feedback);
+        currentQuestionRef.current = feedback;
+        await speakTextFn(feedback);
+        if (stoppedRef.current) return;
       }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      fetchTurn,
-      speakText,
-      addHistory,
-      updateState,
-      beginTurn,
-      stopListening,
-      maxQuestions,
-      maxAnswerTimeSec,
-      clearAnswerTimer,
-    ]
-  );
+
+      // Speak the question
+      addHistory({ role: "assistant", text: question });
+      setCurrentQuestion(question);
+      currentQuestionRef.current = question;
+
+      await speakTextFn(question);
+      if (stoppedRef.current) return;
+
+      // Check if session time is up
+      if (Date.now() >= sessionEndTimeRef.current) {
+        updateState("DONE");
+        return;
+      }
+
+      // Transition to listening — deaf for 1.5s to ignore AI audio bleed
+      console.log("[LiveQA] Transitioning to USER_ANSWERING");
+      deafUntilRef.current = Date.now() + 1500;
+      beginTurn(); // Reset transcript BEFORE entering USER_ANSWERING
+      setUserCaption({ final: "", interim: "" });
+      updateState("USER_ANSWERING");
+      ensureListening(); // Ensure mic is active
+
+      // Start max answer timer
+      if (answerTimerRef.current) clearTimeout(answerTimerRef.current);
+      answerTimerRef.current = setTimeout(() => {
+        if (stateRef.current === "USER_ANSWERING") {
+          submitAnswerRef.current();
+        }
+      }, maxAnswerTimeSec * 1000);
+    } catch (err) {
+      if (stoppedRef.current) return;
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      updateState("DONE");
+    }
+  };
 
   // Submit the user's answer for current turn
-  const submitAnswer = useCallback(() => {
+  submitAnswerRef.current = () => {
     clearSilenceTimer();
     clearAnswerTimer();
 
     const answerText = getTurnFinalText().trim();
+    console.log("[LiveQA] Submitting answer:", answerText || "(empty)");
     setUserCaption({ final: answerText, interim: "" });
+
+    // Reset transcript immediately so old answer doesn't bleed into next turn
+    beginTurn();
 
     if (answerText) {
       addHistory({ role: "user", text: answerText });
     }
 
-    // Check if done
-    if (questionsAskedCountRef.current >= maxQuestions) {
+    // Check if session time is up
+    if (Date.now() >= sessionEndTimeRef.current) {
       updateState("DONE");
-      stopListening();
       return;
     }
 
     // Check skip
     if (!answerText || isSkipAnswer(answerText)) {
-      // Skip: go to next question without feedback
-      beginTurn();
-      askQuestion("NEXT_TURN", answerText || "(skipped)");
+      askQuestionRef.current("NEXT_TURN", answerText || "(skipped)");
     } else {
-      beginTurn();
-      askQuestion("NEXT_TURN", answerText);
+      askQuestionRef.current("NEXT_TURN", answerText);
     }
-  }, [
-    clearSilenceTimer,
-    clearAnswerTimer,
-    getTurnFinalText,
-    addHistory,
-    updateState,
-    stopListening,
-    beginTurn,
-    askQuestion,
-    maxQuestions,
-  ]);
+  };
 
   // Start the session
   const start = useCallback(() => {
+    console.log("[LiveQA] Starting session...");
     setError(null);
     setHistory([]);
     setCurrentQuestion("");
     setUserCaption({ final: "", interim: "" });
     setQuestionsAsked(0);
+    setTimeRemaining(sessionDurationSec);
     historyRef.current = [];
     askedQuestionsRef.current = [];
     questionsAskedCountRef.current = 0;
     currentQuestionRef.current = "";
+    stoppedRef.current = false;
 
+    // Set session end time
+    sessionEndTimeRef.current = Date.now() + sessionDurationSec * 1000;
+
+    // Start countdown timer
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((sessionEndTimeRef.current - Date.now()) / 1000));
+      setTimeRemaining(remaining);
+      if (remaining <= 0) {
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        // If we're in USER_ANSWERING, auto-submit
+        if (stateRef.current === "USER_ANSWERING") {
+          submitAnswerRef.current();
+        }
+      }
+    }, 1000);
+
+    // Start mic (handsfree - always on)
     startListening();
-    askQuestion("FIRST_QUESTION");
-  }, [startListening, askQuestion]);
+    
+    // Start first question
+    askQuestionRef.current("FIRST_QUESTION");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startListening, sessionDurationSec]);
 
   // Stop / end session
   const stop = useCallback(() => {
+    console.log("[LiveQA] Stopping session...");
+    stoppedRef.current = true;
     clearSilenceTimer();
     clearAnswerTimer();
     stopListening();
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
-    abortRef.current?.abort();
+    
+    if (ttsAbortRef.current) {
+      ttsAbortRef.current.abort();
+      ttsAbortRef.current = null;
+    }
+    
     updateState("DONE");
   }, [stopListening, clearSilenceTimer, clearAnswerTimer, updateState]);
 
@@ -374,12 +412,18 @@ export function useLiveQA({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      stoppedRef.current = true;
       clearSilenceTimer();
       clearAnswerTimer();
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
       if (audioRef.current) {
         audioRef.current.pause();
       }
-      abortRef.current?.abort();
+      if (ttsAbortRef.current) {
+        ttsAbortRef.current.abort();
+      }
     };
   }, [clearSilenceTimer, clearAnswerTimer]);
 
@@ -389,8 +433,11 @@ export function useLiveQA({
     currentQuestion,
     userCaption,
     questionsAsked,
-    maxQuestions,
-    isListening,
+    timeRemaining,
+    sessionDurationSec,
+    isListening: speechIsListening,
+    isMuted,
+    toggleMute,
     start,
     stop,
     error,

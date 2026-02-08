@@ -24,7 +24,7 @@ interface ProgressChartProps {
 export function ProgressChart({ data }: ProgressChartProps) {
   if (data.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500">
+      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-white/30 text-white/70">
         No data yet. Record a presentation to see your progress.
       </div>
     );

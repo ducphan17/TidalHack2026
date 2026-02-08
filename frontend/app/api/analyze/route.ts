@@ -120,13 +120,57 @@ export async function POST(request: NextRequest) {
 
         // 4. Store session
         const sessionId = randomUUID();
-        saveSession(sessionId, {
+        await saveSession(sessionId, {
           pdfBase64,
           qaQuestions: result.qa_pack?.questions ?? [],
           report,
         });
 
-        // 5. Send final result
+        // 5. Auto-index PDF slides for RAG (WAIT for completion)
+        if (pdfBase64 && slideCount > 0 && qaOptIn) {
+          controller.enqueue(
+            encoder.encode(
+              sendEvent({ step: "indexing", message: "Indexing slides for Live Q&A..." })
+            )
+          );
+          
+          try {
+            // Extract slide info from audience_understanding
+            const slideTexts = [];
+            
+            // Use audience_understanding if available
+            if (report.audience_understanding && Array.isArray(report.audience_understanding)) {
+              for (const slide of report.audience_understanding) {
+                slideTexts.push({
+                  slide: slide.page,
+                  text: slide.evidence || `Slide ${slide.page}: ${slide.status}`,
+                });
+              }
+            }
+            
+            // Fallback: create basic entries for all slides
+            if (slideTexts.length === 0) {
+              for (let i = 1; i <= slideCount; i++) {
+                slideTexts.push({
+                  slide: i,
+                  text: `Slide ${i} content from presentation`,
+                });
+              }
+            }
+
+            console.log(`[Auto-Index] Indexing ${slideTexts.length} slides for session ${sessionId}`);
+            
+            const { indexPdfSlides } = await import("@/services/pdfChunks");
+            await indexPdfSlides(sessionId, slideTexts);
+            
+            console.log(`[Auto-Index] ✅ Successfully indexed ${slideTexts.length} slides`);
+          } catch (err) {
+            console.error("[Auto-Index] ❌ Indexing failed:", err);
+            // Continue even if indexing fails - Live Q&A will use full PDF
+          }
+        }
+
+        // 6. Send final result
         controller.enqueue(
           encoder.encode(
             sendEvent({

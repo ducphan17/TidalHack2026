@@ -12,10 +12,11 @@
   --accent-light: rgba(119, 165, 198, 0.15);
 }
 
+.panel-hover-shadow {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
 .panel-hover-shadow:hover {
-  box-shadow: 0 0 40px -5px rgba(236, 72, 153, 0.45),
-    0 0 25px -8px rgba(219, 39, 119, 0.3),
-    0 0 15px -10px rgba(244, 114, 182, 0.2);
+  transform: translateY(-4px);
 }
 
 @theme inline {
@@ -83,4 +84,3 @@ body {
 .animate-recording-panel-enter {
   animation: recording-panel-enter 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-

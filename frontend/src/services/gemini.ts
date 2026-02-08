@@ -77,6 +77,14 @@ export interface QAFeedback {
   suggested_answer: string;
 }
 
+export interface LiveQAGrade {
+  question: string;
+  answer: string;
+  score: number;
+  feedback: string;
+  suggested_answer: string;
+}
+
 /* ---------- Helpers ---------- */
 
 function geminiUrl(): string {
@@ -391,6 +399,53 @@ ${answerTranscript}`;
   }
 }
 
+/* ---------- Generate Live Q&A Questions ---------- */
+
+const GENERATE_QUESTIONS_PROMPT = `You are a curious audience member who just watched a presentation. Generate exactly {COUNT} questions about the content.
+
+Rules:
+- Write ONLY the question itself. No preamble, no filler, no "Great presentation" or "I was wondering". Just the question.
+- Each question will be read aloud by text-to-speech, so keep them short (1-2 sentences max).
+- Vary the question style: some "why" questions, some "how" questions, some "what if" scenarios, some asking to explain a concept.
+- Questions should test different parts of the presentation — don't cluster on one slide.
+- Use plain conversational English. No markdown, no bullet points, no formatting.
+
+Return this exact JSON:
+{
+  "questions": [
+    {"id": "q1", "question": "Your first question here?", "slide_ref": "Page 1"},
+    {"id": "q2", "question": "Your second question here?", "slide_ref": "Page 2"}
+  ]
+}`;
+
+export async function generateLiveQuestions(
+  pdfBase64: string,
+  count: number
+): Promise<QAQuestion[]> {
+  const prompt = GENERATE_QUESTIONS_PROMPT.replace("{COUNT}", String(count));
+
+  const cleanBase64 = pdfBase64
+    ? pdfBase64
+        .replace(/^data:application\/pdf;base64,/, "")
+        .replace(/\s/g, "")
+    : "";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [];
+  if (cleanBase64) {
+    parts.push({
+      inline_data: {
+        mime_type: "application/pdf",
+        data: cleanBase64,
+      },
+    });
+  }
+  parts.push({ text: prompt });
+
+  const result = await callGemini(parts, 2048);
+  return result.questions as QAQuestion[];
+}
+
 /* ---------- Conversational Q&A (AI-asks-first) ---------- */
 
 export interface ConversationalQAInput {
@@ -400,32 +455,55 @@ export interface ConversationalQAInput {
   presenterAnswer?: string;
   history: { role: "user" | "assistant"; text: string }[];
   pdfBase64?: string;
+  ragContext?: string;
 }
 
-const LIVE_QA_PROMPT = `You are a curious audience member who just watched a presentation. You ask the presenter questions about their talk to test their understanding.
+const LIVE_QA_PROMPT = `You are a curious audience member having a natural conversation with a presenter.
 
-RULES:
-- Ask broad questions first, then drill down based on answers.
+CRITICAL RULE - QUESTION FORMAT:
+Your question MUST start directly with a question word (What, How, Why, Can, Could, Would, Do, Did, Is, Are, etc.) or the main subject.
+
+FORBIDDEN PHRASES (you will be penalized for using these):
+❌ "Here is the question"
+❌ "Here is the practice question"
+❌ "Let me ask you"
+❌ "I'd like to ask"
+❌ "Question:"
+❌ "My question is"
+❌ "Here's my question"
+
+YOUR QUESTION MUST BE WRITTEN EXACTLY AS YOU WOULD ASK IT IN A REAL CONVERSATION.
+
+CORRECT EXAMPLES:
+✅ "What's the main topic of your presentation?"
+✅ "Can you explain how that works?"
+✅ "Why did you choose this approach?"
+✅ "How do bananas grow?"
+
+INCORRECT EXAMPLES (NEVER DO THIS):
+❌ "Here is the practice question: What's the main topic?"
+❌ "Let me ask you: Can you explain that?"
+❌ "My question is, why did you choose this?"
+
+ADDITIONAL RULES:
 - Questions MUST be grounded in the PDF slides/topics provided.
-- NEVER repeat any question from the "ALREADY ASKED" list — hard constraint.
-- Keep spoken text short: 1-2 concise sentences max.
-- Use contractions and short sentences — this will be spoken aloud via TTS.
-- Do NOT use markdown, bullet points, or any formatting. Plain spoken text only.
-- If the presenter's transcript seems unclear, ask a confirmation question (e.g., "Did you mean X?") instead of continuing.
+- NEVER repeat any question from the "ALREADY ASKED" list.
+- Keep responses short: 1-2 sentences max.
+- Use contractions (what's, you're, can't, etc.)
+- This will be spoken aloud via TTS - sound natural.
+- No markdown, bullets, or formatting.
 
+OUTPUT FORMAT:
 FOR FIRST_QUESTION mode:
-- Generate only a question (no feedback).
-- Return: { "question": "Your question here" }
+Return: { "question": "What's your main point?" }
 
 FOR NEXT_TURN mode:
-- First provide brief feedback on the presenter's answer (1 sentence, encouraging but honest).
-- Then provide the next question.
-- Return: { "feedback": "Brief feedback", "question": "Next question" }`;
+Return: { "feedback": "Nice explanation.", "question": "Why did you pick that example?" }`;
 
 export async function conversationalQA(
   input: ConversationalQAInput
 ): Promise<{ question: string; feedback?: string }> {
-  const { mode, askedQuestions, lastQuestion, presenterAnswer, history, pdfBase64 } = input;
+  const { mode, askedQuestions, lastQuestion, presenterAnswer, history, pdfBase64, ragContext } = input;
 
   const historyText = history
     .map((h) => `${h.role === "user" ? "Presenter" : "You"}: ${h.text}`)
@@ -460,7 +538,11 @@ ${alreadyAsked}
 ---
 
 CONVERSATION SO FAR:
-${historyText || "(This is the start of the conversation)"}`;
+${historyText || "(This is the start of the conversation)"}${
+    ragContext
+      ? `\n\n---\n\nRELEVANT SLIDE CONTEXT (from vector search):\n${ragContext}`
+      : ""
+  }`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parts: any[] = [{ text: textContent }];
@@ -478,6 +560,84 @@ ${historyText || "(This is the start of the conversation)"}`;
   }
 
   return await callGemini(parts, 512);
+}
+
+/* ---------- Grade All Live Q&A Answers ---------- */
+
+const GRADE_ALL_PROMPT = `You are an expert presentation coach grading a student's Q&A performance.
+
+The student was asked {COUNT} questions about their presentation. Grade each answer individually.
+
+For each question-answer pair, evaluate:
+- Accuracy: Does the answer correctly address the question based on the slide content?
+- Completeness: Did the student cover all key aspects?
+- Clarity: Was the answer clear and well-articulated?
+
+Score each answer 0–10 and provide:
+- feedback: 2-3 sentences on how well they answered
+- suggested_answer: A model answer for that question
+
+Return this exact JSON:
+{
+  "grades": [
+    {
+      "question": "The question text",
+      "answer": "What the student said",
+      "score": 7,
+      "feedback": "2-3 sentences on how well they answered",
+      "suggested_answer": "A model answer for this question"
+    }
+  ]
+}
+
+IMPORTANT: Return exactly {COUNT} grades in the same order as the questions below.`;
+
+export async function gradeLiveAnswers(
+  qaPairs: { question: string; slide_ref: string; answer: string }[],
+  pdfBase64: string
+): Promise<LiveQAGrade[]> {
+  const prompt = GRADE_ALL_PROMPT.replace(
+    /\{COUNT\}/g,
+    String(qaPairs.length)
+  );
+
+  const pairsText = qaPairs
+    .map(
+      (p, i) =>
+        `--- Question ${i + 1} (${p.slide_ref}) ---\nQ: ${p.question}\nA: ${p.answer || "(No answer provided)"}`
+    )
+    .join("\n\n");
+
+  const textContent = `${prompt}\n\n${pairsText}`;
+
+  const cleanBase64 = pdfBase64
+    ? pdfBase64
+        .replace(/^data:application\/pdf;base64,/, "")
+        .replace(/\s/g, "")
+    : "";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [];
+  if (cleanBase64) {
+    parts.push({
+      inline_data: {
+        mime_type: "application/pdf",
+        data: cleanBase64,
+      },
+    });
+  }
+  parts.push({ text: textContent });
+
+  try {
+    const result = await callGemini(parts, 4096);
+    return result.grades as LiveQAGrade[];
+  } catch (e) {
+    if (cleanBase64 && e instanceof Error && e.message.includes("400")) {
+      console.warn("Gemini rejected grading with PDF, retrying without slides");
+      return ((await callGemini([{ text: textContent }], 4096)) as { grades: LiveQAGrade[] }).grades;
+    }
+    throw e;
+  }
 }
 
 /* ---------- Legacy function (kept for backwards compat) ---------- */
