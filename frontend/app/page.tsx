@@ -128,7 +128,13 @@ export default function MeetingRoom() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error ?? "Analysis failed");
+        const msg = errData.error ?? "Analysis failed";
+        if (msg.includes("no spoken audio")) {
+          throw new Error(
+            "No speech detected. Make sure your microphone is working and try speaking clearly."
+          );
+        }
+        throw new Error(msg);
       }
 
       const data = await res.json();
