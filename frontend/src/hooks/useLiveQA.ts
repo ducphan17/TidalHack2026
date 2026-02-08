@@ -14,12 +14,14 @@ interface UseLiveQAOptions {
   sessionId: string;
   voiceId?: string;
   silenceTimeoutMs?: number;
+  maxQuestions?: number;
 }
 
 export function useLiveQA({
   sessionId,
   voiceId = "9BWtsMINqrJLrRacOk9x",
   silenceTimeoutMs = 1500,
+  maxQuestions,
 }: UseLiveQAOptions) {
   const [state, setState] = useState<LiveQAState>("IDLE");
   const [history, setHistory] = useState<LiveQAHistoryEntry[]>([]);

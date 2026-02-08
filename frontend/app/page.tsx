@@ -43,8 +43,6 @@ export default function MeetingRoom() {
   const [step, setStep] = useState<Step>("upload");
   const [pdfBase64, setPdfBase64] = useState("");
   const [slideCount, setSlideCount] = useState(0);
-  const [qaOptIn, setQaOptIn] = useState(false);
-  const [qaCount, setQaCount] = useState(3);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<PresentationReport | null>(null);
   const [qaPack, setQaPack] = useState<QAQuestion[] | null>(null);
@@ -58,6 +56,7 @@ export default function MeetingRoom() {
   const [attemptNumber, setAttemptNumber] = useState(0);
   const [analyzeStep, setAnalyzeStep] = useState<AnalyzeStep | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Set<AnalyzeStep>>(new Set());
+  const [stepsExpanded, setStepsExpanded] = useState(false);
   const hasStartedRecording = useRef(false);
 
   // Load history from API on mount
@@ -145,8 +144,8 @@ export default function MeetingRoom() {
     formData.append("audio_file", blob, "recording.webm");
     formData.append("slides_pdf_base64", pdfBase64);
     formData.append("slide_count", String(slideCount));
-    formData.append("qa_opt_in", qaOptIn ? "true" : "false");
-    formData.append("qa_count", String(qaCount));
+    formData.append("qa_opt_in", "true");
+    formData.append("qa_count", "3");
 
     try {
       const res = await fetch("/api/analyze", {
@@ -286,7 +285,7 @@ export default function MeetingRoom() {
       setCompletedSteps(new Set());
       stopMicrophone();
     }
-  }, [blob, pdfBase64, slideCount, qaOptIn, qaCount, stopMicrophone, attemptNumber]);
+  }, [blob, pdfBase64, slideCount, stopMicrophone, attemptNumber]);
 
   useEffect(() => {
     if (step === "recording" && !isRecording && blob) {
@@ -347,8 +346,6 @@ export default function MeetingRoom() {
     setTranscript(null);
     setPdfBase64("");
     setSlideCount(0);
-    setQaOptIn(false);
-    setQaCount(3);
     setAttemptNumber(0);
     setHistory([]);
     resetRecorder();
@@ -487,47 +484,8 @@ export default function MeetingRoom() {
               </Card>
             </motion.div>
 
-            <motion.div custom={2} initial="hidden" animate="visible" variants={panelDropVariants}>
-            <Card>
-              <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
-                Q&A Practice (optional)
-              </h3>
-              <div className="pl-4 max-w-2xl">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={qaOptIn}
-                  onChange={(e) => setQaOptIn(e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-300"
-                />
-                <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                  Generate Q&A questions after feedback
-                </span>
-              </label>
-              {qaOptIn && (
-                <div className="mt-3 flex items-center gap-3">
-                  <label className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Number of questions:
-                  </label>
-                  <select
-                    value={qaCount}
-                    onChange={(e) => setQaCount(Number(e.target.value))}
-                    className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-sm"
-                  >
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              </div>
-            </Card>
-            </motion.div>
-
             {error && (
-              <motion.div custom={3} initial="hidden" animate="visible" variants={panelDropVariants}>
+              <motion.div custom={2} initial="hidden" animate="visible" variants={panelDropVariants}>
                 <Card
                   variant="outlined"
                   className="border-red-200 dark:border-red-900 text-red-700 dark:text-red-300"
@@ -720,14 +678,6 @@ export default function MeetingRoom() {
                 <Button variant="secondary" onClick={handleReset}>
                   New Presentation
                 </Button>
-                {qaPack && qaPack.length > 0 && sessionId && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setStep("qa_active")}
-                  >
-                    Start Q&A Practice
-                  </Button>
-                )}
                 {sessionId && (
                   <Button
                     variant="secondary"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLiveQA, type LiveQAHistoryEntry } from "@/hooks/useLiveQA";
 import { Card, Button } from "@/components/shared";
 
@@ -10,15 +10,76 @@ interface LiveQAPanelProps {
 }
 
 export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
+  const [qaCount, setQaCount] = useState(3);
+  const [started, setStarted] = useState(false);
+
+  if (!started) {
+    return (
+      <section className="space-y-4">
+        <Card>
+          <div className="flex flex-col items-center gap-6 py-8">
+            <h2 className="font-semibold text-zinc-900 dark:text-zinc-100 text-lg">
+              Live Q&A
+            </h2>
+            <p className="text-sm text-zinc-500 text-center max-w-sm">
+              Have a real-time voice conversation with your AI coach about your presentation.
+            </p>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-zinc-600 dark:text-zinc-400">
+                Number of questions:
+              </label>
+              <select
+                value={qaCount}
+                onChange={(e) => setQaCount(Number(e.target.value))}
+                className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-sm"
+              >
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="secondary" onClick={() => onEnd?.([])}>
+                Back
+              </Button>
+              <Button variant="primary" onClick={() => setStarted(true)}>
+                Start Q&A
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </section>
+    );
+  }
+
+  return (
+    <LiveQASession
+      sessionId={sessionId}
+      maxQuestions={qaCount}
+      onEnd={onEnd}
+    />
+  );
+}
+
+function LiveQASession({
+  sessionId,
+  maxQuestions,
+  onEnd,
+}: {
+  sessionId: string;
+  maxQuestions: number;
+  onEnd?: (history: LiveQAHistoryEntry[]) => void;
+}) {
   const {
     state,
     transcript,
     history,
-    currentAnswer,
     start,
     stop,
     error,
-  } = useLiveQA({ sessionId });
+  } = useLiveQA({ sessionId, maxQuestions });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hasStarted = useRef(false);
@@ -41,6 +102,9 @@ export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
     onEnd?.(history);
   };
 
+  // Count how many Q&A rounds completed (each round = 1 user + 1 assistant)
+  const questionsAsked = history.filter((h) => h.role === "assistant").length;
+
   return (
     <section className="space-y-4">
       {/* Header */}
@@ -51,6 +115,9 @@ export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
             <div>
               <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">
                 Live Q&A
+                <span className="ml-2 text-xs font-normal text-zinc-500">
+                  {questionsAsked}/{maxQuestions}
+                </span>
               </h2>
               <p className="text-xs text-zinc-500">
                 {state === "LISTENING" && "Listening... speak your answer"}
