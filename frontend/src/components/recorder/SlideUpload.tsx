@@ -55,7 +55,10 @@ export function SlideUpload({ onSlidesUploaded, disabled }: SlideUploadProps) {
   }, [onSlidesUploaded]);
 
   return (
-    <Card variant="outlined" className="border-dashed">
+    <Card
+      variant="outlined"
+      className="border-dashed !bg-[#A1C0D7]/80 !border-[#A1C0D7]/60"
+    >
       <label className="block cursor-pointer">
         <input
           type="file"
@@ -67,7 +70,7 @@ export function SlideUpload({ onSlidesUploaded, disabled }: SlideUploadProps) {
         <div className="flex flex-col items-center gap-2 py-4">
           {fileName ? (
             <>
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <span className="text-sm font-medium text-white">
                 {fileName}
               </span>
               <Button
@@ -84,7 +87,7 @@ export function SlideUpload({ onSlidesUploaded, disabled }: SlideUploadProps) {
             </>
           ) : (
             <>
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">
+              <span className="text-sm text-white">
                 {isUploading
                   ? "Uploading slides..."
                   : "Upload your slides (PDF)"}
@@ -94,6 +97,7 @@ export function SlideUpload({ onSlidesUploaded, disabled }: SlideUploadProps) {
                 variant="secondary"
                 size="sm"
                 disabled={disabled || isUploading}
+                className="!bg-[#A1C0D7] !text-white hover:!bg-[#8fb0c9] border border-[#A1C0D7]/60"
                 onClick={(e) => {
                   e.preventDefault();
                   (e.target as HTMLElement).closest("label")?.querySelector("input")?.click();

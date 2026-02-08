@@ -62,7 +62,7 @@ export function VoicePlayer({ audioUrl, text }: VoicePlayerProps) {
             <button
               type="button"
               onClick={() => setExpanded((e) => !e)}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-0.5"
+              className="text-xs text-[#77A5C6] hover:underline mt-0.5"
             >
               {expanded ? "Show less" : "Show more"}
             </button>

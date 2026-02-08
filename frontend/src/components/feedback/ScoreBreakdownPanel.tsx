@@ -71,7 +71,7 @@ export function ScoreBreakdownPanel({
 
   return (
     <Card>
-      <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+      <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
         Why this score?
       </h3>
       <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">

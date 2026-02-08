@@ -12,20 +12,23 @@ export function Card({
   className = "",
   ...props
 }: CardProps) {
-  const base =
-    "rounded-xl p-6 transition-shadow";
-  const variants = {
-    default:
-      "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm",
-    elevated:
-      "bg-white dark:bg-zinc-900 shadow-lg shadow-zinc-200/50 dark:shadow-zinc-900/50",
-    outlined:
-      "bg-transparent border-2 border-dashed border-zinc-300 dark:border-zinc-700",
-  };
+  const base = "rounded-xl p-6 transition-shadow duration-300 panel-hover-shadow";
+  const blurred = "backdrop-blur-xl bg-white/50 dark:bg-zinc-900/50";
+
+  if (variant === "outlined") {
+    return (
+      <div
+        className={`${base} ${blurred} border border-zinc-200/50 dark:border-zinc-700/50 ${className}`}
+        {...props}
+      >
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div
-      className={`${base} ${variants[variant]} ${className}`}
+      className={`relative rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 ${blurred} ${base} min-h-0 shadow-lg shadow-zinc-200/40 dark:shadow-zinc-950/50 ${className}`}
       {...props}
     >
       {children}
@@ -41,7 +44,7 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={`mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100 ${className}`}>
+    <div className={`mb-4 text-lg font-semibold text-[var(--heading)] dark:text-zinc-100 ${className}`}>
       {children}
     </div>
   );
