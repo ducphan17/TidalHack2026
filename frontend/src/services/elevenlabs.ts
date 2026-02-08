@@ -33,3 +33,10 @@ export async function generateVoiceFeedback(
 
   return res.blob();
 }
+
+export async function generateCoachSpeech(
+  text: string,
+  _mode: "recap" | "question" | "qa_feedback" = "recap"
+): Promise<Blob> {
+  return generateVoiceFeedback(text);
+}

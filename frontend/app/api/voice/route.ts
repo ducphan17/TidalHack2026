@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateVoiceFeedback } from "@/services/elevenlabs";
+import { generateCoachSpeech } from "@/services/elevenlabs";
 
 export async function POST(request: NextRequest) {
   try {
-    const { text } = await request.json();
+    const { text, mode } = await request.json();
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const blob = await generateVoiceFeedback(text);
+    const blob = await generateCoachSpeech(
+      text,
+      mode ?? "recap"
+    );
 
     return new NextResponse(blob, {
       headers: {

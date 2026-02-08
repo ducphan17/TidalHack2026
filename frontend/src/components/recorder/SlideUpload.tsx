@@ -5,11 +5,11 @@ import { Card } from "@/components/shared";
 import { Button } from "@/components/shared";
 
 interface SlideUploadProps {
-  onSlidesParsed: (slideContent: string) => void;
+  onSlidesUploaded: (data: { slideCount: number; pdfBase64: string }) => void;
   disabled?: boolean;
 }
 
-export function SlideUpload({ onSlidesParsed, disabled }: SlideUploadProps) {
+export function SlideUpload({ onSlidesUploaded, disabled }: SlideUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -26,19 +26,19 @@ export function SlideUpload({ onSlidesParsed, disabled }: SlideUploadProps) {
         const formData = new FormData();
         formData.append("file", file);
 
-        const res = await fetch("/api/parse-slides", {
+        const res = await fetch("/api/slides/upload", {
           method: "POST",
           body: formData,
         });
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "Failed to parse slides");
+          throw new Error(data.error ?? "Failed to upload slides");
         }
 
-        const { slides } = await res.json();
+        const { slideCount, pdfBase64 } = await res.json();
         setFileName(file.name);
-        onSlidesParsed(slides);
+        onSlidesUploaded({ slideCount, pdfBase64 });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
       } finally {
@@ -46,20 +46,20 @@ export function SlideUpload({ onSlidesParsed, disabled }: SlideUploadProps) {
         e.target.value = "";
       }
     },
-    [onSlidesParsed]
+    [onSlidesUploaded]
   );
 
   const handleRemove = useCallback(() => {
     setFileName(null);
-    onSlidesParsed("");
-  }, [onSlidesParsed]);
+    onSlidesUploaded({ slideCount: 0, pdfBase64: "" });
+  }, [onSlidesUploaded]);
 
   return (
     <Card variant="outlined" className="border-dashed">
       <label className="block cursor-pointer">
         <input
           type="file"
-          accept=".pptx"
+          accept=".pdf"
           onChange={handleFileChange}
           disabled={disabled || isUploading}
           className="sr-only"
@@ -86,8 +86,8 @@ export function SlideUpload({ onSlidesParsed, disabled }: SlideUploadProps) {
             <>
               <span className="text-sm text-zinc-600 dark:text-zinc-400">
                 {isUploading
-                  ? "Parsing slides…"
-                  : "Upload your slides (PPTX)"}
+                  ? "Uploading slides..."
+                  : "Upload your slides (PDF)"}
               </span>
               <Button
                 type="button"
