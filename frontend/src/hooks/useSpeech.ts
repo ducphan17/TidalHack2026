@@ -72,7 +72,112 @@ export function useSpeech(options: UseSpeechOptions = {}) {
   const resultsLenRef = useRef(0);
   const turnFinalRef = useRef("");
 
+  const createRecognition = useCallback(() => {
+    const SpeechRecognition =
+      typeof window !== "undefined" &&
+      ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance })
+        .webkitSpeechRecognition ||
+        (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
+          .SpeechRecognition);
+
+    if (!SpeechRecognition) {
+      return null;
+    }
+
+    const recognition = new SpeechRecognition() as SpeechRecognitionInstance;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionResultEvent) => {
+      resultsLenRef.current = event.results.length;
+
+      let turnFinal = "";
+      let turnInterim = "";
+
+      // Only process results from current turn
+      for (let i = turnBaseIndexRef.current; i < event.results.length; i++) {
+        const result = event.results[i];
+        const text = result[0].transcript;
+        if (result.isFinal) {
+          turnFinal += text;
+        } else {
+          turnInterim += text;
+        }
+      }
+
+      turnFinalRef.current = turnFinal;
+      const combined = turnFinal + turnInterim;
+      const hasFinalChunk = turnFinal.length > 0 && turnInterim.length === 0;
+
+      console.log("[Speech] Result:", { turnFinal, turnInterim, hasFinalChunk });
+
+      setFinalText(turnFinal);
+      setInterimText(turnInterim);
+
+      onResultRef.current?.({
+        finalText: turnFinal,
+        interimText: turnInterim,
+        combinedText: combined,
+        hasFinalChunk,
+      });
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent & { error?: string }) => {
+      console.warn("[Speech] Error event:", event.error);
+      // Ignore recoverable errors when auto-restarting
+      const ignorable = ["no-speech", "aborted", "network"];
+      if (ignorable.includes(event.error ?? "") && !stoppedRef.current) {
+        console.log("[Speech] Ignoring error, will auto-restart");
+        return;
+      }
+      console.error("[Speech] Unrecoverable error:", event.error);
+      setError(event.error ?? "Unknown error");
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      console.log("[Speech] Recognition ended, stopped:", stoppedRef.current);
+      if (!stoppedRef.current) {
+        // Auto-restart recognition
+        try {
+          setTimeout(() => {
+            if (!stoppedRef.current && recognitionRef.current === recognition) {
+              console.log("[Speech] Auto-restarting recognition");
+              recognition.start();
+            }
+          }, 100);
+        } catch (err) {
+          console.error("[Speech] Failed to restart:", err);
+          setIsListening(false);
+        }
+        return;
+      }
+      setIsListening(false);
+    };
+
+    return recognition;
+  }, []);
+
   const startListening = useCallback(() => {
+    if (engine !== "webspeech") {
+      setError("ElevenLabs real-time STT requires API integration");
+      return;
+    }
+
+    // Stop existing recognition first
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
+
     setError(null);
     setFinalText("");
     setInterimText("");
@@ -80,89 +185,54 @@ export function useSpeech(options: UseSpeechOptions = {}) {
     turnBaseIndexRef.current = 0;
     resultsLenRef.current = 0;
 
-    if (engine === "webspeech") {
-      const SpeechRecognition =
-        typeof window !== "undefined" &&
-        ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance })
-          .webkitSpeechRecognition ||
-          (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
-            .SpeechRecognition);
+    const recognition = createRecognition();
+    if (!recognition) {
+      setError("Web Speech API not supported in this browser");
+      return;
+    }
 
-      if (!SpeechRecognition) {
-        setError("Web Speech API not supported in this browser");
-        return;
-      }
+    recognitionRef.current = recognition;
+    stoppedRef.current = false;
 
-      const recognition = new SpeechRecognition() as SpeechRecognitionInstance;
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
-
-      recognition.onresult = (event: SpeechRecognitionResultEvent) => {
-        resultsLenRef.current = event.results.length;
-
-        let turnFinal = "";
-        let turnInterim = "";
-
-        // Only process results from current turn
-        for (let i = turnBaseIndexRef.current; i < event.results.length; i++) {
-          const result = event.results[i];
-          const text = result[0].transcript;
-          if (result.isFinal) {
-            turnFinal += text;
-          } else {
-            turnInterim += text;
-          }
-        }
-
-        turnFinalRef.current = turnFinal;
-        const combined = turnFinal + turnInterim;
-        const hasFinalChunk = turnFinal.length > 0 && turnInterim.length === 0;
-
-        setFinalText(turnFinal);
-        setInterimText(turnInterim);
-
-        onResultRef.current?.({
-          finalText: turnFinal,
-          interimText: turnInterim,
-          combinedText: combined,
-          hasFinalChunk,
-        });
-      };
-
-      recognition.onerror = (event: SpeechRecognitionErrorEvent & { error?: string }) => {
-        if (event.error === "no-speech" && autoRestart && !stoppedRef.current) {
-          return;
-        }
-        setError(event.error ?? "Unknown error");
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        if (autoRestart && !stoppedRef.current) {
-          try {
-            recognition.start();
-          } catch {
-            setIsListening(false);
-          }
-          return;
-        }
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      stoppedRef.current = false;
+    try {
       recognition.start();
       setIsListening(true);
-    } else {
-      setError("ElevenLabs real-time STT requires API integration");
+      console.log("[Speech] Started listening - mic should be active now");
+    } catch (err) {
+      console.error("[Speech] Failed to start:", err);
+      setError("Failed to start speech recognition");
+      setIsListening(false);
     }
-  }, [engine, autoRestart]);
+  }, [engine, createRecognition]);
+
+  // Ensure recognition is running (call when entering USER_ANSWERING)
+  const ensureListening = useCallback(() => {
+    if (stoppedRef.current) return;
+
+    // If recognition died, restart it
+    if (!recognitionRef.current) {
+      const recognition = createRecognition();
+      if (recognition) {
+        recognitionRef.current = recognition;
+        try {
+          recognition.start();
+          setIsListening(true);
+        } catch {
+          // Will auto-retry via onend
+        }
+      }
+    }
+  }, [createRecognition]);
 
   const stopListening = useCallback(() => {
     stoppedRef.current = true;
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
       recognitionRef.current = null;
     }
     setIsListening(false);
@@ -189,6 +259,7 @@ export function useSpeech(options: UseSpeechOptions = {}) {
     error,
     startListening,
     stopListening,
+    ensureListening,
     beginTurn,
     getTurnFinalText,
   };

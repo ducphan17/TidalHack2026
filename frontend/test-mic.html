@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Mic Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 40px; }
+        #status { font-size: 20px; margin: 20px 0; }
+        #transcript { background: #f0f0f0; padding: 20px; min-height: 100px; margin: 20px 0; }
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; }
+        .interim { color: #888; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Quick Mic Test</h1>
+    <p>This will test if your microphone is working with Web Speech API</p>
+    
+    <button id="start">Start Listening</button>
+    <button id="stop">Stop</button>
+    
+    <div id="status">Click "Start Listening" to begin</div>
+    <div id="transcript"></div>
+    
+    <script>
+        const statusEl = document.getElementById('status');
+        const transcriptEl = document.getElementById('transcript');
+        let recognition = null;
+        
+        document.getElementById('start').onclick = () => {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (!SpeechRecognition) {
+                statusEl.textContent = '❌ Web Speech API not supported';
+                statusEl.style.color = 'red';
+                return;
+            }
+            
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            
+            recognition.onstart = () => {
+                statusEl.textContent = '✅ Listening... speak now!';
+                statusEl.style.color = 'green';
+            };
+            
+            recognition.onresult = (event) => {
+                let finalText = '';
+                let interimText = '';
+                
+                for (let i = 0; i < event.results.length; i++) {
+                    const result = event.results[i];
+                    const text = result[0].transcript;
+                    if (result.isFinal) {
+                        finalText += text + ' ';
+                    } else {
+                        interimText += text;
+                    }
+                }
+                
+                transcriptEl.innerHTML = 
+                    '<strong>Final:</strong> ' + finalText + 
+                    '<br><span class="interim">Interim: ' + interimText + '</span>';
+            };
+            
+            recognition.onerror = (event) => {
+                statusEl.textContent = '❌ Error: ' + event.error;
+                statusEl.style.color = 'red';
+                console.error('Speech error:', event.error);
+            };
+            
+            recognition.onend = () => {
+                statusEl.textContent = '⏹️ Stopped';
+                statusEl.style.color = 'orange';
+            };
+            
+            try {
+                recognition.start();
+            } catch (err) {
+                statusEl.textContent = '❌ Failed to start: ' + err.message;
+                statusEl.style.color = 'red';
+            }
+        };
+        
+        document.getElementById('stop').onclick = () => {
+            if (recognition) {
+                recognition.stop();
+                recognition = null;
+            }
+        };
+    </script>
+</body>
+</html>

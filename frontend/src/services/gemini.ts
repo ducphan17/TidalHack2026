@@ -446,6 +446,122 @@ export async function generateLiveQuestions(
   return result.questions as QAQuestion[];
 }
 
+/* ---------- Conversational Q&A (AI-asks-first) ---------- */
+
+export interface ConversationalQAInput {
+  mode: "FIRST_QUESTION" | "NEXT_TURN";
+  askedQuestions: string[];
+  lastQuestion?: string;
+  presenterAnswer?: string;
+  history: { role: "user" | "assistant"; text: string }[];
+  pdfBase64?: string;
+  ragContext?: string;
+}
+
+const LIVE_QA_PROMPT = `You are a curious audience member having a natural conversation with a presenter.
+
+CRITICAL RULE - QUESTION FORMAT:
+Your question MUST start directly with a question word (What, How, Why, Can, Could, Would, Do, Did, Is, Are, etc.) or the main subject.
+
+FORBIDDEN PHRASES (you will be penalized for using these):
+❌ "Here is the question"
+❌ "Here is the practice question"
+❌ "Let me ask you"
+❌ "I'd like to ask"
+❌ "Question:"
+❌ "My question is"
+❌ "Here's my question"
+
+YOUR QUESTION MUST BE WRITTEN EXACTLY AS YOU WOULD ASK IT IN A REAL CONVERSATION.
+
+CORRECT EXAMPLES:
+✅ "What's the main topic of your presentation?"
+✅ "Can you explain how that works?"
+✅ "Why did you choose this approach?"
+✅ "How do bananas grow?"
+
+INCORRECT EXAMPLES (NEVER DO THIS):
+❌ "Here is the practice question: What's the main topic?"
+❌ "Let me ask you: Can you explain that?"
+❌ "My question is, why did you choose this?"
+
+ADDITIONAL RULES:
+- Questions MUST be grounded in the PDF slides/topics provided.
+- NEVER repeat any question from the "ALREADY ASKED" list.
+- Keep responses short: 1-2 sentences max.
+- Use contractions (what's, you're, can't, etc.)
+- This will be spoken aloud via TTS - sound natural.
+- No markdown, bullets, or formatting.
+
+OUTPUT FORMAT:
+FOR FIRST_QUESTION mode:
+Return: { "question": "What's your main point?" }
+
+FOR NEXT_TURN mode:
+Return: { "feedback": "Nice explanation.", "question": "Why did you pick that example?" }`;
+
+export async function conversationalQA(
+  input: ConversationalQAInput
+): Promise<{ question: string; feedback?: string }> {
+  const { mode, askedQuestions, lastQuestion, presenterAnswer, history, pdfBase64, ragContext } = input;
+
+  const historyText = history
+    .map((h) => `${h.role === "user" ? "Presenter" : "You"}: ${h.text}`)
+    .join("\n");
+
+  const alreadyAsked = askedQuestions.length > 0
+    ? askedQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+    : "(none yet)";
+
+  let modeSection = "";
+  if (mode === "FIRST_QUESTION") {
+    modeSection = `MODE: FIRST_QUESTION
+Generate the first question for this presentation. No feedback needed.`;
+  } else {
+    modeSection = `MODE: NEXT_TURN
+Last question asked: "${lastQuestion || "(unknown)"}"
+Presenter's answer: "${presenterAnswer || "(no answer / skipped)"}"
+Provide brief feedback on their answer, then ask a new question.`;
+  }
+
+  const textContent = `${LIVE_QA_PROMPT}
+
+---
+
+${modeSection}
+
+---
+
+ALREADY ASKED (do NOT repeat):
+${alreadyAsked}
+
+---
+
+CONVERSATION SO FAR:
+${historyText || "(This is the start of the conversation)"}${
+    ragContext
+      ? `\n\n---\n\nRELEVANT SLIDE CONTEXT (from vector search):\n${ragContext}`
+      : ""
+  }`;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [{ text: textContent }];
+
+  if (pdfBase64) {
+    const cleanBase64 = pdfBase64
+      .replace(/^data:application\/pdf;base64,/, "")
+      .replace(/\s/g, "");
+    parts.push({
+      inline_data: {
+        mime_type: "application/pdf",
+        data: cleanBase64,
+      },
+    });
+  }
+
+  return await callGemini(parts, 512);
+}
+
 /* ---------- Grade All Live Q&A Answers ---------- */
 
 const GRADE_ALL_PROMPT = `You are an expert presentation coach grading a student's Q&A performance.

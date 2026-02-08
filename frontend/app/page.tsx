@@ -19,7 +19,8 @@ import { QAPanel, LiveQAPanel } from "@/components/qa";
 import { ProgressChart, type ProgressDataPoint } from "@/components/charts";
 import { Card, Button } from "@/components/shared";
 import { useMedia } from "@/hooks";
-import type { PresentationReport, QAQuestion, QAFeedback, LiveQAGrade } from "@/services/gemini";
+import type { PresentationReport, QAQuestion, QAFeedback } from "@/services/gemini";
+import type { LiveQAHistoryEntry } from "@/hooks/useLiveQA";
 
 type Step =
   | "upload"
@@ -47,7 +48,7 @@ export default function MeetingRoom() {
   const [feedback, setFeedback] = useState<PresentationReport | null>(null);
   const [qaPack, setQaPack] = useState<QAQuestion[] | null>(null);
   const [qaResults, setQaResults] = useState<QAFeedback[]>([]);
-  const [liveQaGrades, setLiveQaGrades] = useState<LiveQAGrade[]>([]);
+  const [liveQaHistory, setLiveQaHistory] = useState<LiveQAHistoryEntry[]>([]);
   const [history, setHistory] = useState<ProgressDataPoint[]>([]);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [voiceCompare, setVoiceCompare] = useState<
@@ -325,7 +326,7 @@ export default function MeetingRoom() {
     setSessionId(null);
     setQaPack(null);
     setQaResults([]);
-    setLiveQaGrades([]);
+    setLiveQaHistory([]);
     setTranscript(null);
     resetRecorder();
     hasStartedRecording.current = false;
@@ -347,7 +348,7 @@ export default function MeetingRoom() {
     setSessionId(null);
     setQaPack(null);
     setQaResults([]);
-    setLiveQaGrades([]);
+    setLiveQaHistory([]);
     setTranscript(null);
     setPdfBase64("");
     setSlideCount(0);
@@ -777,29 +778,20 @@ export default function MeetingRoom() {
               </Card>
             )}
 
-            {liveQaGrades.length > 0 && (
+            {liveQaHistory.length > 0 && (
               <Card>
                 <h3 className="text-lg font-semibold text-zinc-100 mb-4">
-                  Live Q&A Results
+                  Live Q&A Transcript
                 </h3>
-                <div className="space-y-2">
-                  {liveQaGrades.map((g, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="text-white truncate mr-2">
-                        Q{i + 1}: {g.question}
-                      </span>
-                      <span className="font-medium shrink-0">{g.score}/10</span>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {liveQaHistory.map((entry, i) => (
+                    <div key={i} className="text-sm">
+                      <span className="font-medium text-white">
+                        {entry.role === "assistant" ? "Coach" : "You"}:
+                      </span>{" "}
+                      <span className="text-white/70">{entry.text}</span>
                     </div>
                   ))}
-                  <div className="border-t border-zinc-700 pt-2 mt-2 flex items-center justify-between text-sm font-medium">
-                    <span className="text-white">Average</span>
-                    <span>
-                      {(liveQaGrades.reduce((s, g) => s + g.score, 0) / liveQaGrades.length).toFixed(1)}/10
-                    </span>
-                  </div>
                 </div>
               </Card>
             )}
@@ -824,8 +816,8 @@ export default function MeetingRoom() {
         {step === "live_qa" && sessionId && (
           <LiveQAPanel
             sessionId={sessionId}
-            onEnd={(grades) => {
-              setLiveQaGrades(grades);
+            onEnd={(history) => {
+              setLiveQaHistory(history);
               setStep("feedback");
             }}
           />
