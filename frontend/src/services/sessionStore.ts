@@ -6,7 +6,11 @@ export interface Session {
   report: PresentationReport;
 }
 
-const sessions = new Map<string, Session>();
+// Persist across Next.js hot reloads in dev mode
+const globalForSessions = globalThis as unknown as {
+  __sessions?: Map<string, Session>;
+};
+const sessions = globalForSessions.__sessions ??= new Map<string, Session>();
 
 export function saveSession(
   sessionId: string,
