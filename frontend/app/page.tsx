@@ -19,7 +19,7 @@ import { QAPanel, LiveQAPanel } from "@/components/qa";
 import { ProgressChart, type ProgressDataPoint } from "@/components/charts";
 import { Card, Button } from "@/components/shared";
 import { useMedia } from "@/hooks";
-import type { PresentationReport, QAQuestion, QAFeedback } from "@/services/gemini";
+import type { PresentationReport, QAQuestion, QAFeedback, LiveQAGrade } from "@/services/gemini";
 import type { LiveQAHistoryEntry } from "@/hooks/useLiveQA";
 
 type Step =
@@ -29,7 +29,8 @@ type Step =
   | "analyzing"
   | "feedback"
   | "qa_active"
-  | "live_qa";
+  | "live_qa"
+  | "live_qa_results";
 
 type AnalyzeStep = "transcribing" | "computing" | "analyzing" | "done";
 
@@ -49,6 +50,8 @@ export default function MeetingRoom() {
   const [qaPack, setQaPack] = useState<QAQuestion[] | null>(null);
   const [qaResults, setQaResults] = useState<QAFeedback[]>([]);
   const [liveQaHistory, setLiveQaHistory] = useState<LiveQAHistoryEntry[]>([]);
+  const [liveQaGrades, setLiveQaGrades] = useState<LiveQAGrade[]>([]);
+  const [gradingLiveQA, setGradingLiveQA] = useState(false);
   const [history, setHistory] = useState<ProgressDataPoint[]>([]);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [voiceCompare, setVoiceCompare] = useState<
@@ -327,6 +330,8 @@ export default function MeetingRoom() {
     setQaPack(null);
     setQaResults([]);
     setLiveQaHistory([]);
+    setLiveQaGrades([]);
+    setGradingLiveQA(false);
     setTranscript(null);
     resetRecorder();
     hasStartedRecording.current = false;
@@ -349,6 +354,8 @@ export default function MeetingRoom() {
     setQaPack(null);
     setQaResults([]);
     setLiveQaHistory([]);
+    setLiveQaGrades([]);
+    setGradingLiveQA(false);
     setTranscript(null);
     setPdfBase64("");
     setSlideCount(0);
@@ -778,24 +785,6 @@ export default function MeetingRoom() {
               </Card>
             )}
 
-            {liveQaHistory.length > 0 && (
-              <Card>
-                <h3 className="text-lg font-semibold text-zinc-100 mb-4">
-                  Live Q&A Transcript
-                </h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {liveQaHistory.map((entry, i) => (
-                    <div key={i} className="text-sm">
-                      <span className="font-medium text-white">
-                        {entry.role === "assistant" ? "Coach" : "You"}:
-                      </span>{" "}
-                      <span className="text-white/70">{entry.text}</span>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
             <Card>
               <h3 className="text-lg font-semibold text-zinc-100 mb-4">
                 Progress
@@ -816,11 +805,177 @@ export default function MeetingRoom() {
         {step === "live_qa" && sessionId && (
           <LiveQAPanel
             sessionId={sessionId}
-            onEnd={(history) => {
-              setLiveQaHistory(history);
-              setStep("feedback");
+            onEnd={async (hist) => {
+              setLiveQaHistory(hist);
+              setStep("live_qa_results");
+
+              // Extract Q&A pairs from conversation history for grading
+              const qaPairs: { question: string; slide_ref: string; answer: string }[] = [];
+              for (let i = 0; i < hist.length; i++) {
+                if (hist[i].role === "user" && hist[i].text.trim()) {
+                  // Find the last assistant message before this user answer
+                  let questionText = "";
+                  for (let j = i - 1; j >= 0; j--) {
+                    if (hist[j].role === "assistant") {
+                      questionText = hist[j].text;
+                      break;
+                    }
+                  }
+                  if (questionText) {
+                    qaPairs.push({
+                      question: questionText,
+                      slide_ref: "N/A",
+                      answer: hist[i].text,
+                    });
+                  }
+                }
+              }
+
+              if (qaPairs.length === 0) return;
+
+              // Call grading API
+              setGradingLiveQA(true);
+              try {
+                const res = await fetch("/api/qa/live/grade-all", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ sessionId, qaPairs }),
+                });
+                if (res.ok) {
+                  const { grades } = await res.json();
+                  setLiveQaGrades(grades);
+                }
+              } catch (err) {
+                console.error("Failed to grade live Q&A:", err);
+              } finally {
+                setGradingLiveQA(false);
+              }
             }}
           />
+        )}
+
+        {step === "live_qa_results" && (
+          <section className="space-y-6">
+            {/* Header */}
+            <Card>
+              <div className="flex flex-col items-center gap-2 py-4">
+                <h2 className="text-xl font-bold text-zinc-100">Live Q&A Results</h2>
+                <p className="text-sm text-white/60">
+                  {liveQaGrades.length > 0
+                    ? `${liveQaGrades.length} question${liveQaGrades.length !== 1 ? "s" : ""} graded`
+                    : "Grading in progress..."}
+                </p>
+              </div>
+            </Card>
+
+            {/* Grading in progress */}
+            {gradingLiveQA && (
+              <Card>
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  <span className="text-sm text-white/70">Grading your answers...</span>
+                </div>
+              </Card>
+            )}
+
+            {/* Grades loaded */}
+            {!gradingLiveQA && liveQaGrades.length > 0 && (
+              <>
+                {/* Overall average score */}
+                <Card>
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-lg font-semibold text-white">Overall Score</span>
+                    <span className="text-2xl font-bold text-[#77C9E0]">
+                      {(liveQaGrades.reduce((s, g) => s + g.score, 0) / liveQaGrades.length).toFixed(1)}/10
+                    </span>
+                  </div>
+                </Card>
+
+                {/* Per-question breakdown */}
+                {liveQaGrades.map((g, i) => (
+                  <Card key={i}>
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-white/50 mb-1">Question {i + 1}</p>
+                          <p className="text-sm font-medium text-white">{g.question}</p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-3 py-1 text-sm font-bold ${
+                            g.score >= 7
+                              ? "bg-green-500/20 text-green-400"
+                              : g.score >= 4
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-red-500/20 text-red-400"
+                          }`}
+                        >
+                          {g.score}/10
+                        </span>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/50 mb-1">Your answer</p>
+                        <p className="text-sm text-white/70">{g.answer || "(No answer)"}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/50 mb-1">Feedback</p>
+                        <p className="text-sm text-white/70">{g.feedback}</p>
+                      </div>
+
+                      <div className="border-t border-zinc-700/30 pt-3">
+                        <p className="text-xs text-white/50 mb-1">Suggested answer</p>
+                        <p className="text-sm text-[#77C9E0]/80 italic">{g.suggested_answer}</p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </>
+            )}
+
+            {/* Conversation transcript (collapsible) */}
+            {liveQaHistory.length > 0 && !gradingLiveQA && (
+              <details className="group">
+                <summary className="cursor-pointer list-none">
+                  <Card>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-zinc-100">
+                        Conversation Transcript
+                      </h3>
+                      <span className="text-xs text-white/50 group-open:rotate-180 transition-transform">
+                        ▼
+                      </span>
+                    </div>
+                  </Card>
+                </summary>
+                <div className="mt-2">
+                  <Card>
+                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                      {liveQaHistory.map((entry, i) => (
+                        <div key={i} className="text-sm">
+                          <span className="font-medium text-white">
+                            {entry.role === "assistant" ? "Coach" : "You"}:
+                          </span>{" "}
+                          <span className="text-white/70">{entry.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              </details>
+            )}
+
+            {/* Back to feedback button */}
+            <div className="flex justify-center pt-2">
+              <Button
+                variant="secondary"
+                onClick={() => setStep("feedback")}
+                className="bg-[#578EC5]! text-white! border-2 border-transparent hover:border-white transition-all shadow-lg shadow-black/25 px-8"
+              >
+                Back to Presentation Feedback
+              </Button>
+            </div>
+          </section>
         )}
       </main>
     </div>

@@ -19,7 +19,7 @@ interface UseLiveQAOptions {
   sessionId: string;
   voiceId?: string;
   silenceTimeoutMs?: number;
-  maxQuestions?: number;
+  sessionDurationSec?: number;
   maxAnswerTimeSec?: number;
 }
 
@@ -46,8 +46,8 @@ function isSkipAnswer(text: string): boolean {
 export function useLiveQA({
   sessionId,
   voiceId = "9BWtsMINqrJLrRacOk9x",
-  silenceTimeoutMs = 1500,
-  maxQuestions = 5,
+  silenceTimeoutMs = 3000,
+  sessionDurationSec = 180,
   maxAnswerTimeSec = 300,
 }: UseLiveQAOptions) {
   const [state, setState] = useState<LiveQAState>("IDLE");
@@ -56,17 +56,23 @@ export function useLiveQA({
   const [userCaption, setUserCaption] = useState({ final: "", interim: "" });
   const [error, setError] = useState<string | null>(null);
   const [questionsAsked, setQuestionsAsked] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(sessionDurationSec);
 
   const stateRef = useRef<LiveQAState>("IDLE");
   const historyRef = useRef<LiveQAHistoryEntry[]>([]);
   const askedQuestionsRef = useRef<string[]>([]);
   const questionsAskedCountRef = useRef(0);
+  const sessionEndTimeRef = useRef(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
   const currentQuestionRef = useRef("");
   const stoppedRef = useRef(false);
+  const deafUntilRef = useRef(0); // ignore mic input until this timestamp
+  const [isMuted, setIsMuted] = useState(false);
+  const isMutedRef = useRef(false);
 
   const updateState = useCallback((s: LiveQAState) => {
     stateRef.current = s;
@@ -96,6 +102,14 @@ export function useLiveQA({
     []
   );
 
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      isMutedRef.current = next;
+      return next;
+    });
+  }, []);
+
   // Web Speech API
   const {
     isListening: speechIsListening,
@@ -109,26 +123,13 @@ export function useLiveQA({
     autoRestart: true,
     onResult: useCallback(
       (result: SpeechTurnResult) => {
-        // BARGE-IN: If user speaks while AI is speaking, interrupt immediately
-        if (stateRef.current === "AI_SPEAKING") {
-          console.log("[LiveQA] BARGE-IN detected!");
-          
-          // 1. Stop audio playback
-          if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current = null;
-          }
+        // Ignore mic input when muted
+        if (isMutedRef.current) return;
 
-          // 2. Cancel TTS fetch
-          if (ttsAbortRef.current) {
-            ttsAbortRef.current.abort();
-            ttsAbortRef.current = null;
-          }
+        // Ignore mic input during deaf period (prevents AI audio bleed)
+        if (Date.now() < deafUntilRef.current) return;
 
-          // 3. Transition to USER_ANSWERING
-          updateState("USER_ANSWERING");
-        }
-
+        // Only process speech when it's the user's turn to answer
         if (stateRef.current !== "USER_ANSWERING") return;
 
         setUserCaption({ final: result.finalText, interim: result.interimText });
@@ -140,13 +141,15 @@ export function useLiveQA({
         }
 
         if (result.hasFinalChunk && result.combinedText.trim()) {
-          // Start silence timer — submit after pause
+          const wordCount = result.combinedText.trim().split(/\s+/).length;
+          // 3+ words: normal silence timeout. Short answers: longer fallback (2x) so they still submit.
+          const timeout = wordCount >= 3 ? silenceTimeoutMs : silenceTimeoutMs * 2;
           silenceTimerRef.current = setTimeout(() => {
             submitAnswerRef.current();
-          }, silenceTimeoutMs);
+          }, timeout);
         }
       },
-      [silenceTimeoutMs, updateState]
+      [silenceTimeoutMs]
     ),
   });
 
@@ -266,10 +269,7 @@ export function useLiveQA({
         addHistory({ role: "assistant", text: feedback });
         setCurrentQuestion(feedback);
         currentQuestionRef.current = feedback;
-        const finished = await speakTextFn(feedback);
-        if (!finished || stateRef.current === "USER_ANSWERING") {
-          console.log("[LiveQA] Skipped feedback voice (barge-in or error)");
-        }
+        await speakTextFn(feedback);
         if (stoppedRef.current) return;
       }
 
@@ -278,23 +278,21 @@ export function useLiveQA({
       setCurrentQuestion(question);
       currentQuestionRef.current = question;
 
-      const finished = await speakTextFn(question);
-      if (!finished || stateRef.current === "USER_ANSWERING") {
-        console.log("[LiveQA] Skipped question voice (barge-in or error)");
-      }
+      await speakTextFn(question);
       if (stoppedRef.current) return;
 
-      // Check if we've hit max questions
-      if (questionsAskedCountRef.current >= maxQuestions) {
+      // Check if session time is up
+      if (Date.now() >= sessionEndTimeRef.current) {
         updateState("DONE");
         return;
       }
 
-      // Transition to listening
+      // Transition to listening — deaf for 1.5s to ignore AI audio bleed
       console.log("[LiveQA] Transitioning to USER_ANSWERING");
-      updateState("USER_ANSWERING");
+      deafUntilRef.current = Date.now() + 1500;
+      beginTurn(); // Reset transcript BEFORE entering USER_ANSWERING
       setUserCaption({ final: "", interim: "" });
-      beginTurn();
+      updateState("USER_ANSWERING");
       ensureListening(); // Ensure mic is active
 
       // Start max answer timer
@@ -320,12 +318,15 @@ export function useLiveQA({
     console.log("[LiveQA] Submitting answer:", answerText || "(empty)");
     setUserCaption({ final: answerText, interim: "" });
 
+    // Reset transcript immediately so old answer doesn't bleed into next turn
+    beginTurn();
+
     if (answerText) {
       addHistory({ role: "user", text: answerText });
     }
 
-    // Check if done
-    if (questionsAskedCountRef.current >= maxQuestions) {
+    // Check if session time is up
+    if (Date.now() >= sessionEndTimeRef.current) {
       updateState("DONE");
       return;
     }
@@ -346,11 +347,29 @@ export function useLiveQA({
     setCurrentQuestion("");
     setUserCaption({ final: "", interim: "" });
     setQuestionsAsked(0);
+    setTimeRemaining(sessionDurationSec);
     historyRef.current = [];
     askedQuestionsRef.current = [];
     questionsAskedCountRef.current = 0;
     currentQuestionRef.current = "";
     stoppedRef.current = false;
+
+    // Set session end time
+    sessionEndTimeRef.current = Date.now() + sessionDurationSec * 1000;
+
+    // Start countdown timer
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((sessionEndTimeRef.current - Date.now()) / 1000));
+      setTimeRemaining(remaining);
+      if (remaining <= 0) {
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        // If we're in USER_ANSWERING, auto-submit
+        if (stateRef.current === "USER_ANSWERING") {
+          submitAnswerRef.current();
+        }
+      }
+    }, 1000);
 
     // Start mic (handsfree - always on)
     startListening();
@@ -358,7 +377,7 @@ export function useLiveQA({
     // Start first question
     askQuestionRef.current("FIRST_QUESTION");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startListening]);
+  }, [startListening, sessionDurationSec]);
 
   // Stop / end session
   const stop = useCallback(() => {
@@ -367,6 +386,10 @@ export function useLiveQA({
     clearSilenceTimer();
     clearAnswerTimer();
     stopListening();
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
     
     if (audioRef.current) {
       audioRef.current.pause();
@@ -392,6 +415,9 @@ export function useLiveQA({
       stoppedRef.current = true;
       clearSilenceTimer();
       clearAnswerTimer();
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
       if (audioRef.current) {
         audioRef.current.pause();
       }
@@ -407,8 +433,11 @@ export function useLiveQA({
     currentQuestion,
     userCaption,
     questionsAsked,
-    maxQuestions,
+    timeRemaining,
+    sessionDurationSec,
     isListening: speechIsListening,
+    isMuted,
+    toggleMute,
     start,
     stop,
     error,

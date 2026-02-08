@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLiveQA, type LiveQAHistoryEntry, type LiveQAState } from "@/hooks/useLiveQA";
 import { Card, Button } from "@/components/shared";
 
@@ -10,7 +10,7 @@ interface LiveQAPanelProps {
 }
 
 export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
-  const [qaCount, setQaCount] = useState(3);
+  const [duration, setDuration] = useState(180);
   const [started, setStarted] = useState(false);
 
   if (!started) {
@@ -27,18 +27,19 @@ export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
             </p>
             <div className="flex items-center gap-3">
               <label className="text-sm text-white">
-                Number of questions:
+                Session duration:
               </label>
               <select
-                value={qaCount}
-                onChange={(e) => setQaCount(Number(e.target.value))}
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
                 className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100"
               >
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
+                <option value={30}>30 sec</option>
+                <option value={60}>1 min</option>
+                <option value={120}>2 min</option>
+                <option value={180}>3 min</option>
+                <option value={300}>5 min</option>
+                <option value={600}>10 min</option>
               </select>
             </div>
             <div className="flex gap-3">
@@ -58,19 +59,25 @@ export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
   return (
     <LiveQASession
       sessionId={sessionId}
-      maxQuestions={qaCount}
+      sessionDurationSec={duration}
       onEnd={onEnd}
     />
   );
 }
 
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 function LiveQASession({
   sessionId,
-  maxQuestions,
+  sessionDurationSec,
   onEnd,
 }: {
   sessionId: string;
-  maxQuestions: number;
+  sessionDurationSec: number;
   onEnd?: (history: LiveQAHistoryEntry[]) => void;
 }) {
   const {
@@ -79,11 +86,14 @@ function LiveQASession({
     currentQuestion,
     userCaption,
     questionsAsked,
+    timeRemaining,
     isListening,
+    isMuted,
+    toggleMute,
     start,
     stop,
     error,
-  } = useLiveQA({ sessionId, maxQuestions });
+  } = useLiveQA({ sessionId, sessionDurationSec });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hasStarted = useRef(false);
@@ -120,18 +130,18 @@ function LiveQASession({
             <div>
               <h2 className="font-semibold text-zinc-100 text-lg">
                 Live Q&A
-                <span className="ml-2 text-xs font-normal text-white/70">
-                  {questionsAsked}/{maxQuestions}
+                <span className={`ml-2 text-xs font-normal ${timeRemaining <= 30 ? "text-red-400" : "text-white/70"}`}>
+                  {formatTime(timeRemaining)}
                 </span>
               </h2>
               <p className="text-xs text-white/70">
                 {state === "AI_THINKING" && "Coach is thinking..."}
-                {state === "AI_SPEAKING" && "Coach is speaking... (interrupt anytime)"}
+                {state === "AI_SPEAKING" && "Coach is speaking..."}
                 {state === "USER_ANSWERING" && (
                   <span>
                     Your turn — speak your answer
                     <span className="ml-2">
-                      {isListening ? "🎤 Listening..." : "⚠️ Mic not active"}
+                      {isMuted ? "🔇 Muted" : isListening ? "🎤 Listening..." : "⚠️ Mic not active"}
                     </span>
                   </span>
                 )}
@@ -140,11 +150,29 @@ function LiveQASession({
               </p>
             </div>
           </div>
-          <Button variant="secondary" onClick={handleEnd}>
-            {state === "DONE" ? "Close" : "End Q&A"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {state !== "DONE" && state !== "IDLE" && (
+              <button
+                onClick={toggleMute}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isMuted
+                    ? "bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                    : "bg-zinc-700/50 text-white/70 hover:bg-zinc-700"
+                }`}
+                title={isMuted ? "Unmute microphone" : "Mute microphone"}
+              >
+                {isMuted ? "🔇 Unmute" : "🎤 Mute"}
+              </button>
+            )}
+            <Button variant="secondary" onClick={handleEnd}>
+              {state === "DONE" ? "Close" : "End Q&A"}
+            </Button>
+          </div>
         </div>
       </Card>
+
+      {/* Mic level bar — visible when user is answering */}
+      <MicLevelBar active={state === "USER_ANSWERING" && !isMuted} />
 
       {/* Chat history */}
       <Card>
@@ -209,6 +237,96 @@ function LiveQASession({
         </Card>
       )}
     </section>
+  );
+}
+
+function MicLevelBar({ active }: { active: boolean }) {
+  const [level, setLevel] = useState(0);
+  const animRef = useRef(0);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const cleanup = useCallback(() => {
+    cancelAnimationFrame(animRef.current);
+    if (ctxRef.current) {
+      ctxRef.current.close();
+      ctxRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setLevel(0);
+  }, []);
+
+  useEffect(() => {
+    if (!active) {
+      cleanup();
+      return;
+    }
+
+    let cancelled = false;
+
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        const audioCtx = new AudioContext();
+        ctxRef.current = audioCtx;
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const tick = () => {
+          if (cancelled) return;
+          analyser.getByteFrequencyData(data);
+          const avg = data.reduce((a, b) => a + b, 0) / data.length;
+          setLevel(Math.min(100, Math.round((avg / 128) * 100)));
+          animRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+      })
+      .catch(() => {
+        // Mic access denied or unavailable — bar stays at 0
+      });
+
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [active, cleanup]);
+
+  if (!active) return null;
+
+  return (
+    <div className="rounded-xl bg-zinc-900/30 backdrop-blur-xl border border-zinc-700/30 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-3 w-3 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+        </span>
+        <span className="text-xs text-white/70 shrink-0">Listening</span>
+        <div className="flex-1 h-2.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-75"
+            style={{
+              width: `${Math.max(2, level)}%`,
+              backgroundColor:
+                level > 50 ? "#22c55e" : level > 15 ? "#77C9E0" : "#52525b",
+            }}
+          />
+        </div>
+        <span className="text-xs text-white/40 shrink-0 w-8 text-right">
+          {level}%
+        </span>
+      </div>
+    </div>
   );
 }
 
