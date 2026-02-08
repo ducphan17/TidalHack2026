@@ -30,7 +30,7 @@ export function ScoreCard({
         className={`mt-2 text-4xl font-bold ${color}`}
         data-testid="score-value"
       >
-        {score}
+        {Number.isInteger(score) ? score : score.toFixed(1)}
         <span className="text-xl font-normal text-zinc-400">/{maxScore}</span>
       </div>
     </Card>

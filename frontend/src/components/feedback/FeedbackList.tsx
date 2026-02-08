@@ -7,9 +7,24 @@ interface FeedbackListProps {
   feedback: PresentationReport;
 }
 
+function statusLabel(
+  status: "well_explained" | "partially_explained" | "not_well_explained"
+) {
+  switch (status) {
+    case "well_explained":
+      return { text: "Well explained", color: "text-green-600 dark:text-green-400" };
+    case "partially_explained":
+      return { text: "Partially explained", color: "text-amber-600 dark:text-amber-400" };
+    case "not_well_explained":
+      return { text: "Not well explained", color: "text-red-600 dark:text-red-400" };
+  }
+}
+
 export function FeedbackList({ feedback }: FeedbackListProps) {
   const {
     summary,
+    relevance_gate,
+    audience_understanding,
     filler_words,
     unclear_terms,
     critique,
@@ -19,12 +34,57 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
   return (
     <div className="space-y-6">
+      {relevance_gate?.passed === false && (
+        <Card className="border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20">
+          <h3 className="font-semibold text-red-700 dark:text-red-300 mb-2">
+            Relevance gate: not passed
+          </h3>
+          <p className="text-sm text-red-600 dark:text-red-400">
+            {relevance_gate.reason ??
+              "The presentation content does not match the provided slides."}
+          </p>
+        </Card>
+      )}
+
       <Card>
         <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
           Summary
         </h3>
         <p className="text-zinc-600 dark:text-zinc-400">{summary}</p>
       </Card>
+
+      {audience_understanding && audience_understanding.length > 0 && (
+        <Card>
+          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+            Slide-by-slide understanding
+          </h3>
+          <ul className="space-y-3">
+            {audience_understanding.map((s, i) => {
+              const { text, color } = statusLabel(s.status);
+              return (
+                <li
+                  key={i}
+                  className="flex flex-col gap-1 border-b border-zinc-100 dark:border-zinc-800 last:border-0 pb-3 last:pb-0"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      Page {s.page}
+                    </span>
+                    <span className={`text-sm font-medium ${color}`}>
+                      {text}
+                    </span>
+                  </div>
+                  {s.evidence && (
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                      {s.evidence}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
@@ -45,14 +105,6 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
             </h4>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {critique.content}
-            </p>
-          </div>
-          <div>
-            <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Visual Design
-            </h4>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              {critique.visual}
             </p>
           </div>
         </div>
