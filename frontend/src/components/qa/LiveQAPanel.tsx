@@ -78,6 +78,7 @@ function LiveQASession({
     currentQuestion,
     userCaption,
     questionsAsked,
+    isListening,
     start,
     stop,
     error,
@@ -86,13 +87,19 @@ function LiveQASession({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hasStarted = useRef(false);
 
-  // Auto-start on mount
+  // Auto-start on mount (React Strict Mode safe)
   useEffect(() => {
-    if (!hasStarted.current) {
-      hasStarted.current = true;
-      start();
-    }
-  }, [start]);
+    // In React Strict Mode, effects run twice. Use timeout to
+    // survive the unmount/remount cycle.
+    const timer = setTimeout(() => {
+      if (!hasStarted.current) {
+        hasStarted.current = true;
+        start();
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -121,7 +128,14 @@ function LiveQASession({
               <p className="text-xs text-zinc-500">
                 {state === "AI_THINKING" && "Coach is thinking..."}
                 {state === "AI_SPEAKING" && "Coach is speaking... (interrupt anytime)"}
-                {state === "USER_ANSWERING" && "Your turn — speak your answer"}
+                {state === "USER_ANSWERING" && (
+                  <span>
+                    Your turn — speak your answer
+                    <span className="ml-2">
+                      {isListening ? "🎤 Listening..." : "⚠️ Mic not active"}
+                    </span>
+                  </span>
+                )}
                 {state === "DONE" && "Q&A complete"}
                 {state === "IDLE" && "Starting..."}
               </p>

@@ -81,10 +81,8 @@ function toSpokenCoachScript(raw: string, mode: CoachMode): string {
   }
 
   if (mode === "question") {
-    return [
-      "[friendly] Here's a practice question. [pause]",
-      ...paragraphs.map((p) => `${p}\n[pause]`),
-    ].join("\n\n");
+    // Just speak the question directly - no preamble needed
+    return paragraphs.map((p) => `${p}\n[pause]`).join("\n\n");
   }
 
   // qa_feedback

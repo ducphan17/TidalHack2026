@@ -400,32 +400,55 @@ export interface ConversationalQAInput {
   presenterAnswer?: string;
   history: { role: "user" | "assistant"; text: string }[];
   pdfBase64?: string;
+  ragContext?: string;
 }
 
-const LIVE_QA_PROMPT = `You are a curious audience member who just watched a presentation. You ask the presenter questions about their talk to test their understanding.
+const LIVE_QA_PROMPT = `You are a curious audience member having a natural conversation with a presenter.
 
-RULES:
-- Ask broad questions first, then drill down based on answers.
+CRITICAL RULE - QUESTION FORMAT:
+Your question MUST start directly with a question word (What, How, Why, Can, Could, Would, Do, Did, Is, Are, etc.) or the main subject.
+
+FORBIDDEN PHRASES (you will be penalized for using these):
+❌ "Here is the question"
+❌ "Here is the practice question"
+❌ "Let me ask you"
+❌ "I'd like to ask"
+❌ "Question:"
+❌ "My question is"
+❌ "Here's my question"
+
+YOUR QUESTION MUST BE WRITTEN EXACTLY AS YOU WOULD ASK IT IN A REAL CONVERSATION.
+
+CORRECT EXAMPLES:
+✅ "What's the main topic of your presentation?"
+✅ "Can you explain how that works?"
+✅ "Why did you choose this approach?"
+✅ "How do bananas grow?"
+
+INCORRECT EXAMPLES (NEVER DO THIS):
+❌ "Here is the practice question: What's the main topic?"
+❌ "Let me ask you: Can you explain that?"
+❌ "My question is, why did you choose this?"
+
+ADDITIONAL RULES:
 - Questions MUST be grounded in the PDF slides/topics provided.
-- NEVER repeat any question from the "ALREADY ASKED" list — hard constraint.
-- Keep spoken text short: 1-2 concise sentences max.
-- Use contractions and short sentences — this will be spoken aloud via TTS.
-- Do NOT use markdown, bullet points, or any formatting. Plain spoken text only.
-- If the presenter's transcript seems unclear, ask a confirmation question (e.g., "Did you mean X?") instead of continuing.
+- NEVER repeat any question from the "ALREADY ASKED" list.
+- Keep responses short: 1-2 sentences max.
+- Use contractions (what's, you're, can't, etc.)
+- This will be spoken aloud via TTS - sound natural.
+- No markdown, bullets, or formatting.
 
+OUTPUT FORMAT:
 FOR FIRST_QUESTION mode:
-- Generate only a question (no feedback).
-- Return: { "question": "Your question here" }
+Return: { "question": "What's your main point?" }
 
 FOR NEXT_TURN mode:
-- First provide brief feedback on the presenter's answer (1 sentence, encouraging but honest).
-- Then provide the next question.
-- Return: { "feedback": "Brief feedback", "question": "Next question" }`;
+Return: { "feedback": "Nice explanation.", "question": "Why did you pick that example?" }`;
 
 export async function conversationalQA(
   input: ConversationalQAInput
 ): Promise<{ question: string; feedback?: string }> {
-  const { mode, askedQuestions, lastQuestion, presenterAnswer, history, pdfBase64 } = input;
+  const { mode, askedQuestions, lastQuestion, presenterAnswer, history, pdfBase64, ragContext } = input;
 
   const historyText = history
     .map((h) => `${h.role === "user" ? "Presenter" : "You"}: ${h.text}`)
@@ -460,7 +483,11 @@ ${alreadyAsked}
 ---
 
 CONVERSATION SO FAR:
-${historyText || "(This is the start of the conversation)"}`;
+${historyText || "(This is the start of the conversation)"}${
+    ragContext
+      ? `\n\n---\n\nRELEVANT SLIDE CONTEXT (from vector search):\n${ragContext}`
+      : ""
+  }`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parts: any[] = [{ text: textContent }];

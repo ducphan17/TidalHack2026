@@ -1,20 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// In-memory fallback when MONGODB_URI is not set
-const memoryStore: Record<string, unknown[]> = {};
+import { getCollections, ensureIndexes } from "@/services/collections";
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureIndexes();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId") ?? "default";
 
-    if (!process.env.MONGODB_URI) {
-      const records = memoryStore[userId] ?? [];
-      return NextResponse.json(records);
-    }
+    const { history } = await getCollections();
+    const records = await history
+      .find({ userId })
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .toArray();
 
-    // TODO: Connect to MongoDB Atlas and fetch user's history
-    return NextResponse.json(memoryStore[userId] ?? []);
+    return NextResponse.json(records);
   } catch (err) {
     console.error("History GET error:", err);
     return NextResponse.json(
@@ -26,24 +26,23 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureIndexes();
     const body = await request.json();
     const userId = (body.userId as string) ?? "default";
 
+    const { history } = await getCollections();
+
+    const attemptCount = await history.countDocuments({ userId });
+
     const record = {
-      id: crypto.randomUUID(),
       userId,
-      timestamp: new Date().toISOString(),
+      score: body.score ?? 0,
+      attempt: attemptCount + 1,
+      timestamp: new Date(),
       ...body,
     };
 
-    if (!process.env.MONGODB_URI) {
-      const list = (memoryStore[userId] ?? []) as unknown[];
-      list.unshift(record);
-      memoryStore[userId] = list;
-      return NextResponse.json(record);
-    }
-
-    // TODO: Save to MongoDB Atlas
+    await history.insertOne(record);
     return NextResponse.json(record);
   } catch (err) {
     console.error("History POST error:", err);

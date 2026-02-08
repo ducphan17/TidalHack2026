@@ -1,4 +1,5 @@
 import type { PresentationReport, QAQuestion } from "./gemini";
+import { getCollections, ensureIndexes } from "./collections";
 
 export interface Session {
   pdfBase64: string;
@@ -6,19 +7,30 @@ export interface Session {
   report: PresentationReport;
 }
 
-// Persist across Next.js hot reloads in dev mode
-const globalForSessions = globalThis as unknown as {
-  __sessions?: Map<string, Session>;
-};
-const sessions = globalForSessions.__sessions ??= new Map<string, Session>();
-
-export function saveSession(
+export async function saveSession(
   sessionId: string,
   data: Session
-): void {
-  sessions.set(sessionId, data);
+): Promise<void> {
+  await ensureIndexes();
+  const { sessions } = await getCollections();
+  const now = new Date();
+  await sessions.insertOne({
+    sessionId,
+    ...data,
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000), // 24h TTL
+  });
 }
 
-export function getSession(sessionId: string): Session | undefined {
-  return sessions.get(sessionId);
+export async function getSession(
+  sessionId: string
+): Promise<Session | null> {
+  const { sessions } = await getCollections();
+  const doc = await sessions.findOne({ sessionId });
+  if (!doc) return null;
+  return {
+    pdfBase64: doc.pdfBase64,
+    qaQuestions: doc.qaQuestions,
+    report: doc.report,
+  };
 }
