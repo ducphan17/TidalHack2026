@@ -47,15 +47,15 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
       )}
 
       <Card>
-        <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
+        <h3 className="font-semibold text-zinc-100 mb-2">
           Summary
         </h3>
-        <p className="text-zinc-600 dark:text-zinc-400">{summary}</p>
+        <p className="text-zinc-400">{summary}</p>
       </Card>
 
       {audience_understanding && audience_understanding.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+          <h3 className="font-semibold text-zinc-100 mb-4">
             Slide-by-slide understanding
           </h3>
           <ul className="space-y-3">
@@ -64,7 +64,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
               return (
                 <li
                   key={i}
-                  className="flex flex-col gap-1 border-b border-zinc-100 dark:border-zinc-800 last:border-0 pb-3 last:pb-0"
+                  className="flex flex-col gap-1 border-b border-zinc-700 last:border-0 pb-3 last:pb-0"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -75,7 +75,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
                     </span>
                   </div>
                   {s.evidence && (
-                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    <p className="text-sm text-zinc-400">
                       {s.evidence}
                     </p>
                   )}
@@ -87,7 +87,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
       )}
 
       <Card>
-        <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+        <h3 className="font-semibold text-zinc-100 mb-4">
           Critique
         </h3>
         <div className="space-y-3">
@@ -95,7 +95,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
             <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Vocal Delivery
             </h4>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="text-sm text-zinc-400">
               {critique.vocal}
             </p>
           </div>
@@ -103,7 +103,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
             <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Content Quality
             </h4>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="text-sm text-zinc-400">
               {critique.content}
             </p>
           </div>
@@ -112,10 +112,10 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
       {filler_words.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+          <h3 className="font-semibold text-zinc-100 mb-4">
             Filler Words ({filler_words.length})
           </h3>
-          <ul className="space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <ul className="space-y-1 text-sm text-zinc-400">
             {filler_words.map((fw, i) => (
               <li key={i}>
                 <strong>&quot;{fw.word}&quot;</strong> at{" "}
@@ -128,10 +128,10 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
       {unclear_terms.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+          <h3 className="font-semibold text-zinc-100 mb-4">
             Unclear Terms
           </h3>
-          <ul className="space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <ul className="space-y-1 text-sm text-zinc-400">
             {unclear_terms.map((ut, i) => (
               <li key={i}>
                 &quot;{ut.stt_token}&quot; at {ut.timestamp.toFixed(1)}s
@@ -146,10 +146,10 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
       {evidence.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+          <h3 className="font-semibold text-zinc-100 mb-4">
             Evidence
           </h3>
-          <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <ul className="space-y-2 text-sm text-zinc-400">
             {evidence.map((ev, i) => (
               <li key={i} className="flex gap-2">
                 <span className="shrink-0 rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-medium">
@@ -164,10 +164,10 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
       {improvements.length > 0 && (
         <Card>
-          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+          <h3 className="font-semibold text-zinc-100 mb-4">
             How to improve
           </h3>
-          <ol className="list-decimal list-inside space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <ol className="list-decimal list-inside space-y-2 text-sm text-zinc-400">
             {improvements.map((item, i) => (
               <li key={i}>{item}</li>
             ))}

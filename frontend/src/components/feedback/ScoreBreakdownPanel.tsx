@@ -69,19 +69,37 @@ export function ScoreBreakdownPanel({
         ? "Overall = 0 (content must match slides — good delivery alone does not earn points)"
         : `Overall = weighted sum (Coverage 25%, Content 30%, Audience 20%, Alignment 15%, Vocal 10%) = ${weightedSum.toFixed(1)}/10`;
 
+  const criteriaSummary = [
+    { label: "Coverage", pct: 25 },
+    { label: "Content Quality", pct: 30 },
+    { label: "Audience Understanding", pct: 20 },
+    { label: "Alignment", pct: 15 },
+    { label: "Vocal Delivery", pct: 10 },
+  ];
+
   return (
     <Card>
-      <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
+      <h3 className="font-semibold text-zinc-100 mb-2">
         Why this score?
       </h3>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">
+        Criteria weights:
+      </p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-400 mb-4">
+        {criteriaSummary.map(({ label, pct }) => (
+          <span key={label}>
+            {label}: {pct}%
+          </span>
+        ))}
+      </div>
+      <p className="text-sm text-zinc-400 mb-4">
         {formulaText}
       </p>
       <div className="space-y-4">
         {axes.map(({ label, score, weight, rationale }) => (
           <div
             key={label}
-            className="flex gap-4 items-start border-b border-zinc-100 dark:border-zinc-800 last:border-0 pb-4 last:pb-0"
+            className="flex gap-4 items-start border-b border-zinc-700 last:border-0 pb-4 last:pb-0"
           >
             <div className="shrink-0 w-14 text-right">
               <span
@@ -94,7 +112,7 @@ export function ScoreBreakdownPanel({
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
                 {label}
-                <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                <span className="text-xs font-normal text-zinc-400">
                   ({(weight * 100)}%)
                 </span>
               </div>

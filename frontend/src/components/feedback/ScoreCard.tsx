@@ -23,7 +23,7 @@ export function ScoreCard({
 
   return (
     <Card variant="elevated" className="text-center">
-      <div className="text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+      <div className="text-sm font-medium text-zinc-400 uppercase tracking-wide">
         {label}
       </div>
       <div

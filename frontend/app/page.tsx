@@ -58,6 +58,7 @@ export default function MeetingRoom() {
   const [attemptNumber, setAttemptNumber] = useState(0);
   const [analyzeStep, setAnalyzeStep] = useState<AnalyzeStep | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Set<AnalyzeStep>>(new Set());
+  const [stepsExpanded, setStepsExpanded] = useState(false);
   const hasStartedRecording = useRef(false);
 
   // Load history from API on mount
@@ -337,6 +338,8 @@ export default function MeetingRoom() {
   }, [resetRecorder, startMicrophone]);
 
   const handleReset = useCallback(() => {
+    stopMicrophone();
+    hasStartedRecording.current = false;
     setStep("upload");
     setFeedback(null);
     setVoiceUrl(null);
@@ -352,7 +355,7 @@ export default function MeetingRoom() {
     setAttemptNumber(0);
     setHistory([]);
     resetRecorder();
-  }, [resetRecorder]);
+  }, [resetRecorder, stopMicrophone]);
 
   const error = mediaError ?? recordError;
   const canStartRecording = pdfBase64.length > 0;
@@ -377,7 +380,7 @@ export default function MeetingRoom() {
 
   return (
     <div>
-      <header className="backdrop-blur-xl bg-white/50 dark:bg-zinc-900/50 border-b border-zinc-200/50 dark:border-zinc-700/50 shadow-lg">
+      <header className="backdrop-blur-xl bg-zinc-900/50 border-b border-zinc-700/50 shadow-lg">
         <div className="w-full px-6 py-5 flex items-center gap-4">
           <div className="w-14 h-14 flex items-center justify-center shrink-0">
             <Image
@@ -388,11 +391,16 @@ export default function MeetingRoom() {
               className="object-contain"
             />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--heading)] dark:text-zinc-100">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-left hover:opacity-80 transition-opacity"
+            aria-label="Reset to start"
+          >
+            <h1 className="text-2xl font-bold text-zinc-100">
               Presently.ai
             </h1>
-          </div>
+          </button>
         </div>
       </header>
 
@@ -412,18 +420,18 @@ export default function MeetingRoom() {
               initial="hidden"
               animate="visible"
               variants={panelDropVariants}
-              className="rounded-2xl backdrop-blur-xl bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-700/50 transition-shadow duration-300 panel-hover-shadow"
+              className="rounded-2xl backdrop-blur-xl bg-zinc-900/50 border border-zinc-700/50 transition-shadow duration-300 panel-hover-shadow"
             >
                 <button
                   type="button"
                   onClick={() => setStepsExpanded((e) => !e)}
                   className="w-full px-8 py-6 flex items-start justify-between gap-4 text-left"
                 >
-                  <h2 className="text-xl font-semibold text-[var(--heading)] dark:text-zinc-100 shrink-0">
+                  <h2 className="text-xl font-semibold text-zinc-100 shrink-0">
                     Upload slides, then record your voice
                   </h2>
                   <svg
-                    className={`w-5 h-5 text-zinc-600 dark:text-zinc-400 shrink-0 transition-transform ${stepsExpanded ? "rotate-180" : ""}`}
+                    className={`w-5 h-5 text-zinc-400 shrink-0 transition-transform ${stepsExpanded ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -466,7 +474,7 @@ export default function MeetingRoom() {
               </Card>
 
               <Card>
-                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+                <h3 className="font-semibold text-zinc-100 mb-4">
                   Step 2: Record
                 </h3>
                 <div className="flex flex-col items-center gap-4 py-4">
@@ -500,7 +508,7 @@ export default function MeetingRoom() {
                   onChange={(e) => setQaOptIn(e.target.checked)}
                   className="h-4 w-4 rounded border-zinc-300"
                 />
-                <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                <span className="text-sm text-zinc-300">
                   Generate Q&A questions after feedback
                 </span>
               </label>
@@ -540,11 +548,11 @@ export default function MeetingRoom() {
 
             {/* Recording section - overlays and fades in smoothly */}
             <section
-              className={`absolute inset-x-0 top-0 flex flex-col items-center pt-4 transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              className={`absolute inset-x-0 top-0 flex flex-col items-stretch pt-4 px-6 transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 step === "recording" ? "opacity-100" : "opacity-0 pointer-events-none"
               }`}
             >
-              <Card className="w-full max-w-md animate-recording-panel-enter">
+              <Card className="w-full animate-recording-panel-enter">
                 <div className="flex flex-col items-center gap-6 py-8">
                   <p className="flex items-center gap-2 text-sm font-medium text-zinc-400">
                     <span className="flex h-2 w-2 animate-pulse rounded-full bg-red-500" />
@@ -562,8 +570,10 @@ export default function MeetingRoom() {
               </Card>
 
               {pdfBase64 && (
-                <Card className={`w-full mt-6 transition-opacity duration-300 ${isRecording ? "opacity-40" : "opacity-100"}`}>
-                  <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+                <div
+                  className={`w-full mt-6 rounded-xl border border-zinc-700/50 bg-zinc-900 p-6 shadow-lg transition-opacity duration-300 ${isRecording ? "opacity-40" : "opacity-100"}`}
+                >
+                  <h3 className="font-semibold text-zinc-100 mb-4">
                     Your Slides
                   </h3>
                   <iframe
@@ -572,7 +582,7 @@ export default function MeetingRoom() {
                     style={{ height: "50vh" }}
                     title="Presentation slides"
                   />
-                </Card>
+                </div>
               )}
             </section>
           </div>
@@ -581,64 +591,61 @@ export default function MeetingRoom() {
         {step === "recorded_pending" && (
           <section className="space-y-6">
             <Card className="relative">
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 py-8 px-6">
-                <div />
-                <div className="flex flex-col items-center gap-6 min-w-0">
-                  <div className="flex items-center gap-3 text-green-600 dark:text-green-400">
-                    <span className="flex h-5 w-5 shrink-0 rounded-full bg-green-500/20 p-1">
-                      <svg
-                        className="h-full w-full text-green-500"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </span>
-                    <span className="font-medium">Recording complete</span>
-                  </div>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 text-center max-w-sm">
-                    Your recording is ready. Re-record or start analysis to get
-                    feedback.
-                  </p>
-                  <div className="flex shrink-0 gap-3">
-                    <Button
-                      variant="secondary"
-                      onClick={handleReRecord}
-                    >
-                      Re-record
-                    </Button>
-                    <Button
-                      variant="primary"
-                      onClick={handleConfirmAnalyze}
-                    >
-                      Start analysis
-                    </Button>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCancelToDashboard}
-                  className="justify-self-end p-1.5 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                  aria-label="Cancel and return to dashboard"
+              <button
+                type="button"
+                onClick={handleCancelToDashboard}
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                aria-label="Cancel and return to dashboard"
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+              <div className="flex flex-col items-center gap-6 py-8 px-6">
+                <div className="flex items-center gap-3 text-green-600 dark:text-green-400">
+                  <span className="flex h-5 w-5 shrink-0 rounded-full bg-green-500/20 p-1">
+                    <svg
+                      className="h-full w-full text-green-500"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </span>
+                  <span className="font-medium">Recording complete</span>
+                </div>
+                <p className="text-sm text-zinc-400 text-center max-w-sm">
+                  Your recording is ready. Re-record or start analysis to get
+                  feedback.
+                </p>
+                <div className="flex shrink-0 gap-3">
+                  <Button
+                    variant="secondary"
+                    onClick={handleReRecord}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+                    Re-record
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={handleConfirmAnalyze}
+                  >
+                    Start analysis
+                  </Button>
+                </div>
               </div>
             </Card>
           </section>
@@ -646,19 +653,14 @@ export default function MeetingRoom() {
 
         {step === "analyzing" && (
           <section className="flex flex-col items-center justify-center py-16">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-            <div className="mt-6 w-full max-w-xs space-y-3">
+            <div className="w-full max-w-xs space-y-3">
               {ANALYZE_STEPS.map(({ key, label }) => {
                 const isCompleted = completedSteps.has(key);
                 const isCurrent = analyzeStep === key;
                 return (
                   <div
                     key={key}
-                    className={`flex items-center gap-3 text-sm transition-opacity ${
-                      isCompleted || isCurrent
-                        ? "opacity-100"
-                        : "opacity-30"
-                    }`}
+                    className="flex items-center gap-3 text-sm"
                   >
                     {isCompleted ? (
                       <svg
@@ -682,10 +684,10 @@ export default function MeetingRoom() {
                     <span
                       className={
                         isCompleted
-                          ? "text-green-600 dark:text-green-400"
+                          ? "text-green-700 dark:text-green-600 font-medium"
                           : isCurrent
-                          ? "text-zinc-900 dark:text-zinc-100 font-medium"
-                          : "text-zinc-400 dark:text-zinc-600"
+                          ? "text-black dark:text-zinc-100 font-medium"
+                          : "text-black dark:text-zinc-300"
                       }
                     >
                       {label}
@@ -694,7 +696,7 @@ export default function MeetingRoom() {
                 );
               })}
             </div>
-            <p className="mt-4 text-xs text-zinc-400">
+            <p className="mt-4 text-xs text-white">
               This may take 15-30 seconds
             </p>
           </section>
@@ -739,9 +741,16 @@ export default function MeetingRoom() {
               </div>
             </div>
 
+            {feedback.score_breakdown && (
+              <ScoreBreakdownPanel
+                breakdown={feedback.score_breakdown}
+                relevanceGate={feedback.relevance_gate}
+              />
+            )}
+
             {voiceCompare.length > 0 && (
               <Card>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+                <h3 className="font-semibold text-zinc-100 mb-4">
                   Choose Coach Voice
                 </h3>
                 <div className="space-y-3">
@@ -765,7 +774,7 @@ export default function MeetingRoom() {
 
             {transcript && (
               <Card>
-                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
+                <h3 className="font-semibold text-zinc-100 mb-2">
                   What we heard
                 </h3>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">
@@ -778,7 +787,7 @@ export default function MeetingRoom() {
 
             {qaResults.length > 0 && (
               <Card>
-                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+                <h3 className="font-semibold text-zinc-100 mb-4">
                   Q&A Results
                 </h3>
                 <div className="space-y-2">
@@ -798,7 +807,7 @@ export default function MeetingRoom() {
             )}
 
             <Card>
-              <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+              <h3 className="font-semibold text-zinc-100 mb-4">
                 Progress
               </h3>
               <ProgressChart data={history} />

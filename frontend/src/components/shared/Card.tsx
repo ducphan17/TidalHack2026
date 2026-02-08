@@ -13,12 +13,12 @@ export function Card({
   ...props
 }: CardProps) {
   const base = "rounded-xl p-6 transition-shadow duration-300 panel-hover-shadow";
-  const blurred = "backdrop-blur-xl bg-white/50 dark:bg-zinc-900/50";
+  const panelBg = "backdrop-blur-xl bg-zinc-900/50 border-zinc-700/50";
 
   if (variant === "outlined") {
     return (
       <div
-        className={`${base} ${blurred} border border-zinc-200/50 dark:border-zinc-700/50 ${className}`}
+        className={`${base} ${panelBg} border ${className}`}
         {...props}
       >
         {children}
@@ -28,7 +28,7 @@ export function Card({
 
   return (
     <div
-      className={`relative rounded-xl border border-zinc-200/50 dark:border-zinc-700/50 ${blurred} ${base} min-h-0 shadow-lg shadow-zinc-200/40 dark:shadow-zinc-950/50 ${className}`}
+      className={`relative rounded-xl border ${panelBg} ${base} min-h-0 shadow-lg shadow-zinc-950/50 ${className}`}
       {...props}
     >
       {children}
@@ -44,7 +44,7 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={`mb-4 text-lg font-semibold text-[var(--heading)] dark:text-zinc-100 ${className}`}>
+    <div className={`mb-4 text-lg font-semibold text-zinc-100 ${className}`}>
       {children}
     </div>
   );
