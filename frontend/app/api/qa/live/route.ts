@@ -4,11 +4,18 @@ import { getSession } from "@/services/sessionStore";
 
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId, utterance, history } = await request.json();
+    const {
+      sessionId,
+      mode,
+      askedQuestions,
+      lastQuestion,
+      presenterAnswer,
+      history,
+    } = await request.json();
 
-    if (!sessionId || !utterance) {
+    if (!sessionId || !mode) {
       return NextResponse.json(
-        { error: "Missing sessionId or utterance" },
+        { error: "Missing sessionId or mode" },
         { status: 400 }
       );
     }
@@ -21,13 +28,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await conversationalQA(
-      utterance,
-      history ?? [],
-      session.pdfBase64
-    );
+    // Only send PDF on first question to avoid slow re-uploads every turn
+    const result = await conversationalQA({
+      mode,
+      askedQuestions: askedQuestions ?? [],
+      lastQuestion,
+      presenterAnswer,
+      history: history ?? [],
+      pdfBase64: mode === "FIRST_QUESTION" ? session.pdfBase64 : undefined,
+    });
 
-    return NextResponse.json({ answer: result.answer });
+    return NextResponse.json(result);
   } catch (err) {
     console.error("Live QA error:", err);
     return NextResponse.json(

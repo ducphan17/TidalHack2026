@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export type SpeechEngine = "webspeech" | "elevenlabs";
+
+export interface SpeechTurnResult {
+  finalText: string;
+  interimText: string;
+  combinedText: string;
+  hasFinalChunk: boolean;
+}
 
 export interface UseSpeechOptions {
   engine?: SpeechEngine;
   autoRestart?: boolean;
-  onResult?: (transcript: string, isFinal: boolean) => void;
+  onResult?: (result: SpeechTurnResult) => void;
 }
 
 // Web Speech API types (not in all TS libs)
@@ -35,6 +42,7 @@ interface SpeechRecognitionResultList {
 interface SpeechRecognitionInstance {
   start: () => void;
   stop: () => void;
+  abort: () => void;
   continuous: boolean;
   interimResults: boolean;
   lang: string;
@@ -44,18 +52,33 @@ interface SpeechRecognitionInstance {
 }
 
 export function useSpeech(options: UseSpeechOptions = {}) {
-  const { engine = "webspeech", autoRestart = false, onResult } = options;
+  const { engine = "webspeech", autoRestart = false } = options;
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const [finalText, setFinalText] = useState("");
+  const [interimText, setInterimText] = useState("");
   const [error, setError] = useState<string | null>(null);
+
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const transcriptRef = useRef("");
   const stoppedRef = useRef(true);
+
+  // Fix stale closure: always read latest onResult via ref
+  const onResultRef = useRef(options.onResult);
+  useEffect(() => {
+    onResultRef.current = options.onResult;
+  }, [options.onResult]);
+
+  // Turn-based: soft reset via base index
+  const turnBaseIndexRef = useRef(0);
+  const resultsLenRef = useRef(0);
+  const turnFinalRef = useRef("");
 
   const startListening = useCallback(() => {
     setError(null);
-    setTranscript("");
-    transcriptRef.current = "";
+    setFinalText("");
+    setInterimText("");
+    turnFinalRef.current = "";
+    turnBaseIndexRef.current = 0;
+    resultsLenRef.current = 0;
 
     if (engine === "webspeech") {
       const SpeechRecognition =
@@ -76,21 +99,35 @@ export function useSpeech(options: UseSpeechOptions = {}) {
       recognition.lang = "en-US";
 
       recognition.onresult = (event: SpeechRecognitionResultEvent) => {
-        let finalTranscript = "";
-        let interimTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        resultsLenRef.current = event.results.length;
+
+        let turnFinal = "";
+        let turnInterim = "";
+
+        // Only process results from current turn
+        for (let i = turnBaseIndexRef.current; i < event.results.length; i++) {
           const result = event.results[i];
           const text = result[0].transcript;
           if (result.isFinal) {
-            finalTranscript += text;
+            turnFinal += text;
           } else {
-            interimTranscript += text;
+            turnInterim += text;
           }
         }
-        transcriptRef.current += finalTranscript;
-        const full = transcriptRef.current + interimTranscript;
-        setTranscript(full);
-        onResult?.(full, interimTranscript === "");
+
+        turnFinalRef.current = turnFinal;
+        const combined = turnFinal + turnInterim;
+        const hasFinalChunk = turnFinal.length > 0 && turnInterim.length === 0;
+
+        setFinalText(turnFinal);
+        setInterimText(turnInterim);
+
+        onResultRef.current?.({
+          finalText: turnFinal,
+          interimText: turnInterim,
+          combinedText: combined,
+          hasFinalChunk,
+        });
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent & { error?: string }) => {
@@ -120,7 +157,7 @@ export function useSpeech(options: UseSpeechOptions = {}) {
     } else {
       setError("ElevenLabs real-time STT requires API integration");
     }
-  }, [engine, autoRestart, onResult]);
+  }, [engine, autoRestart]);
 
   const stopListening = useCallback(() => {
     stoppedRef.current = true;
@@ -131,12 +168,28 @@ export function useSpeech(options: UseSpeechOptions = {}) {
     setIsListening(false);
   }, []);
 
+  // Soft reset: start a new turn without restarting recognition
+  const beginTurn = useCallback(() => {
+    turnBaseIndexRef.current = resultsLenRef.current;
+    turnFinalRef.current = "";
+    setFinalText("");
+    setInterimText("");
+  }, []);
+
+  // Get committed final text for current turn
+  const getTurnFinalText = useCallback(() => {
+    return turnFinalRef.current;
+  }, []);
+
   return {
-    transcript,
+    finalText,
+    interimText,
+    transcript: finalText + interimText, // backwards compat
     isListening,
     error,
     startListening,
     stopListening,
-    setTranscript,
+    beginTurn,
+    getTurnFinalText,
   };
 }

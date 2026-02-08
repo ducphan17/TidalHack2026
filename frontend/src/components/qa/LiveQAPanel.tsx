@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useLiveQA, type LiveQAHistoryEntry } from "@/hooks/useLiveQA";
+import { useLiveQA, type LiveQAHistoryEntry, type LiveQAState } from "@/hooks/useLiveQA";
 import { Card, Button } from "@/components/shared";
 
 interface LiveQAPanelProps {
@@ -22,7 +22,7 @@ export function LiveQAPanel({ sessionId, onEnd }: LiveQAPanelProps) {
               Live Q&A
             </h2>
             <p className="text-sm text-zinc-500 text-center max-w-sm">
-              Have a real-time voice conversation with your AI coach about your presentation.
+              Your AI coach will ask you questions about your presentation. Answer naturally — just like a real Q&A session.
             </p>
             <div className="flex items-center gap-3">
               <label className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -74,8 +74,10 @@ function LiveQASession({
 }) {
   const {
     state,
-    transcript,
     history,
+    currentQuestion,
+    userCaption,
+    questionsAsked,
     start,
     stop,
     error,
@@ -95,15 +97,12 @@ function LiveQASession({
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [history, transcript]);
+  }, [history, userCaption]);
 
   const handleEnd = () => {
     stop();
     onEnd?.(history);
   };
-
-  // Count how many Q&A rounds completed (each round = 1 user + 1 assistant)
-  const questionsAsked = history.filter((h) => h.role === "assistant").length;
 
   return (
     <section className="space-y-4">
@@ -120,42 +119,51 @@ function LiveQASession({
                 </span>
               </h2>
               <p className="text-xs text-zinc-500">
-                {state === "LISTENING" && "Listening... speak your answer"}
-                {state === "THINKING" && "Processing your response..."}
-                {state === "SPEAKING" && "Coach is speaking... (interrupt anytime)"}
-                {state === "IDLE" && "Ready to start"}
+                {state === "AI_THINKING" && "Coach is thinking..."}
+                {state === "AI_SPEAKING" && "Coach is speaking... (interrupt anytime)"}
+                {state === "USER_ANSWERING" && "Your turn — speak your answer"}
+                {state === "DONE" && "Q&A complete"}
+                {state === "IDLE" && "Starting..."}
               </p>
             </div>
           </div>
           <Button variant="secondary" onClick={handleEnd}>
-            End Q&A
+            {state === "DONE" ? "Close" : "End Q&A"}
           </Button>
         </div>
       </Card>
 
       {/* Chat history */}
       <Card>
-        <div className="max-h-96 overflow-y-auto space-y-3 p-1">
-          {history.length === 0 && state === "LISTENING" && (
+        <div className="max-h-[28rem] overflow-y-auto space-y-3 p-1">
+          {history.length === 0 && state === "AI_THINKING" && (
             <p className="text-center text-sm text-zinc-400 py-8">
-              Start speaking to begin the conversation...
+              Preparing first question...
             </p>
           )}
+
           {history.map((entry, i) => (
             <ChatBubble key={i} entry={entry} />
           ))}
 
-          {/* Live transcript preview */}
-          {transcript && state === "LISTENING" && (
+          {/* Live user caption (current turn) */}
+          {state === "USER_ANSWERING" && (userCaption.final || userCaption.interim) && (
             <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-sm opacity-60 italic">
-                {transcript}
+              <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2 bg-blue-500 text-white text-sm">
+                {userCaption.final && (
+                  <span>{userCaption.final}</span>
+                )}
+                {userCaption.interim && (
+                  <span className="opacity-60 italic">
+                    {userCaption.final ? " " : ""}{userCaption.interim}
+                  </span>
+                )}
               </div>
             </div>
           )}
 
           {/* Thinking indicator */}
-          {state === "THINKING" && (
+          {state === "AI_THINKING" && history.length > 0 && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-2xl rounded-bl-md px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-sm">
                 <span className="inline-flex gap-1">
@@ -165,6 +173,13 @@ function LiveQASession({
                 </span>
               </div>
             </div>
+          )}
+
+          {/* Done message */}
+          {state === "DONE" && (
+            <p className="text-center text-sm text-zinc-400 py-4">
+              Q&A session complete — {questionsAsked} question{questionsAsked !== 1 ? "s" : ""} asked.
+            </p>
           )}
 
           <div ref={chatEndRef} />
@@ -184,8 +199,8 @@ function LiveQASession({
   );
 }
 
-function StateIndicator({ state }: { state: string }) {
-  if (state === "LISTENING") {
+function StateIndicator({ state }: { state: LiveQAState }) {
+  if (state === "USER_ANSWERING") {
     return (
       <span className="relative flex h-4 w-4">
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -193,12 +208,12 @@ function StateIndicator({ state }: { state: string }) {
       </span>
     );
   }
-  if (state === "THINKING") {
+  if (state === "AI_THINKING") {
     return (
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
     );
   }
-  if (state === "SPEAKING") {
+  if (state === "AI_SPEAKING") {
     return (
       <span className="flex items-center gap-0.5 h-4">
         {[0, 1, 2, 3].map((i) => (
@@ -211,6 +226,19 @@ function StateIndicator({ state }: { state: string }) {
             }}
           />
         ))}
+      </span>
+    );
+  }
+  if (state === "DONE") {
+    return (
+      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-green-500">
+        <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+          <path
+            fillRule="evenodd"
+            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+            clipRule="evenodd"
+          />
+        </svg>
       </span>
     );
   }
