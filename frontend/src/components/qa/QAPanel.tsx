@@ -181,7 +181,7 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
     <div className="space-y-6">
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
+          <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100">
             Q&A Practice
           </h3>
           <span className="text-sm text-zinc-500">
@@ -225,7 +225,7 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
 
         {qaStep === "grading" && (
           <div className="flex items-center gap-3 py-4">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#77A5C6] border-t-transparent" />
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
               Grading your answer...
             </span>
@@ -235,7 +235,7 @@ export function QAPanel({ questions, sessionId, onComplete }: QAPanelProps) {
 
       {qaStep === "feedback" && currentFeedback && (
         <Card>
-          <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+          <h4 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
             Feedback — Score: {currentFeedback.score}/10
           </h4>
           <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3">

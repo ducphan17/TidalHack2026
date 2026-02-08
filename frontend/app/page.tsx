@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Image from "next/image";
+import { motion } from "framer-motion";
+import { LandingPage } from "@/components/landing";
 import {
   SlideUpload,
-  RecordingControls,
+  RecordingCircle,
   useMediaRecorder,
-  AudioLevelMeter,
 } from "@/components/recorder";
 import {
   ScoreCard,
@@ -36,6 +38,7 @@ const ANALYZE_STEPS: { key: AnalyzeStep; label: string }[] = [
 ];
 
 export default function MeetingRoom() {
+  const [showLanding, setShowLanding] = useState(true);
   const [step, setStep] = useState<Step>("upload");
   const [pdfBase64, setPdfBase64] = useState("");
   const [slideCount, setSlideCount] = useState(0);
@@ -353,51 +356,142 @@ export default function MeetingRoom() {
   const error = mediaError ?? recordError;
   const canStartRecording = pdfBase64.length > 0;
 
+  const panelDropVariants = {
+    hidden: { y: -60, opacity: 0 },
+    visible: (i: number) => ({
+      y: 0,
+      opacity: 1,
+      transition: { delay: i * 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+    }),
+  };
+
+  if (showLanding) {
+    return (
+      <LandingPage
+        projectName="Presently.ai"
+        onComplete={() => setShowLanding(false)}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-        <div className="mx-auto max-w-4xl px-4 py-6">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-            Present AI
-          </h1>
-          <p className="text-zinc-600 dark:text-zinc-400">
-            Practice like you have feedback
-          </p>
+    <div>
+      <header className="backdrop-blur-xl bg-white/50 dark:bg-zinc-900/50 border-b border-zinc-200/50 dark:border-zinc-700/50 shadow-lg">
+        <div className="w-full px-6 py-5 flex items-center gap-4">
+          <div className="w-14 h-14 flex items-center justify-center shrink-0">
+            <Image
+              src="/header-logo.png"
+              alt="Presently.ai"
+              width={56}
+              height={56}
+              className="object-contain"
+            />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--heading)] dark:text-zinc-100">
+              Presently.ai
+            </h1>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-8">
-        {step === "upload" && !feedback && (
-          <section className="space-y-6">
-            <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 p-8 text-white">
-              <h2 className="text-xl font-semibold">
-                Upload slides, then record your voice
-              </h2>
-              <p className="mt-2 text-blue-100">
-                1. Upload your PDF slides
-                <br />
-                2. Record yourself presenting (voice only)
-                <br />
-                3. Get feedback on delivery & content
-              </p>
-            </div>
+      <main className="w-full px-6 py-8">
+        {(step === "upload" || step === "recording") && !feedback && (
+          <div className={`relative ${step === "recording" ? "min-h-[70vh]" : ""}`}>
+            {/* Upload section - fades out smoothly when recording */}
+            <section
+              className={`space-y-6 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                step === "recording"
+                  ? "opacity-0 pointer-events-none absolute inset-x-0 top-0"
+                  : "opacity-100"
+              }`}
+            >
+            <motion.div
+              custom={0}
+              initial="hidden"
+              animate="visible"
+              variants={panelDropVariants}
+              className="rounded-2xl backdrop-blur-xl bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-700/50 transition-shadow duration-300 panel-hover-shadow"
+            >
+                <button
+                  type="button"
+                  onClick={() => setStepsExpanded((e) => !e)}
+                  className="w-full px-8 py-6 flex items-start justify-between gap-4 text-left"
+                >
+                  <h2 className="text-xl font-semibold text-[var(--heading)] dark:text-zinc-100 shrink-0">
+                    Upload slides, then record your voice
+                  </h2>
+                  <svg
+                    className={`w-5 h-5 text-zinc-600 dark:text-zinc-400 shrink-0 transition-transform ${stepsExpanded ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {stepsExpanded && (
+                  <div className="px-8 pb-6 pl-12">
+                    <p className="text-zinc-400 max-w-md">
+                      1. Upload your PDF slides
+                      <br />
+                      2. Record yourself presenting (voice only)
+                      <br />
+                      3. Get feedback on delivery & content
+                    </p>
+                  </div>
+                )}
+            </motion.div>
 
-            <Card>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
-                Step 1: Upload slides
-              </h3>
-              <SlideUpload onSlidesUploaded={handleSlidesUploaded} />
-              {slideCount > 0 && (
-                <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                  {slideCount} slide{slideCount !== 1 ? "s" : ""} detected
-                </p>
-              )}
-            </Card>
+            <motion.div
+              custom={1}
+              initial="hidden"
+              animate="visible"
+              variants={panelDropVariants}
+              className="grid grid-cols-1 md:grid-cols-2 gap-6"
+            >
+              <Card>
+                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+                  Step 1: Upload slides
+                </h3>
+                <div className="pl-4 max-w-2xl">
+                  <SlideUpload onSlidesUploaded={handleSlidesUploaded} />
+                  {slideCount > 0 && (
+                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                      {slideCount} slide{slideCount !== 1 ? "s" : ""} detected
+                    </p>
+                  )}
+                </div>
+              </Card>
 
+              <Card>
+                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+                  Step 2: Record
+                </h3>
+                <div className="flex flex-col items-center gap-4 py-4">
+                  <RecordingCircle
+                    isRecording={false}
+                    canStart={canStartRecording}
+                    stream={null}
+                    onStart={handleStartRecording}
+                    onStop={() => {}}
+                    isLoading={false}
+                  />
+                  {!canStartRecording && (
+                    <p className="text-sm text-white">
+                      Upload slides first to enable recording
+                    </p>
+                  )}
+                </div>
+              </Card>
+            </motion.div>
+
+            <motion.div custom={2} initial="hidden" animate="visible" variants={panelDropVariants}>
             <Card>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+              <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
                 Q&A Practice (optional)
               </h3>
+              <div className="pl-4 max-w-2xl">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -427,76 +521,60 @@ export default function MeetingRoom() {
                   </select>
                 </div>
               )}
+              </div>
             </Card>
-
-            <Card>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
-                Step 2: Record
-              </h3>
-              <RecordingControls
-                isRecording={false}
-                canStart={canStartRecording}
-                onStart={handleStartRecording}
-                onStop={() => {}}
-                isLoading={false}
-              />
-              {!canStartRecording && (
-                <p className="mt-2 text-sm text-zinc-500">
-                  Upload slides first to enable recording
-                </p>
-              )}
-            </Card>
+            </motion.div>
 
             {error && (
-              <Card
-                variant="outlined"
-                className="border-red-200 dark:border-red-900 text-red-700 dark:text-red-300"
-              >
-                {error}
-              </Card>
+              <motion.div custom={3} initial="hidden" animate="visible" variants={panelDropVariants}>
+                <Card
+                  variant="outlined"
+                  className="border-red-200 dark:border-red-900 text-red-700 dark:text-red-300"
+                >
+                  {error}
+                </Card>
+              </motion.div>
             )}
+            </section>
 
-            <Card>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-                Your progress
-              </h3>
-              <ProgressChart data={history} />
-            </Card>
-          </section>
-        )}
-
-        {step === "recording" && (
-          <section className="space-y-6">
-            <Card>
-              <div className="flex items-center gap-3 py-4">
-                <span className="flex h-4 w-4 animate-pulse rounded-full bg-red-500" />
-                <span className="font-medium">Recording voice...</span>
-              </div>
-              <AudioLevelMeter stream={stream} />
-              <div className="flex items-center justify-between mt-4">
-                <RecordingControls
-                  isRecording={isRecording}
-                  canStart={!!stream}
-                  onStart={handleStartRecording}
-                  onStop={handleStopRecording}
-                />
-              </div>
-            </Card>
-
-            {pdfBase64 && (
-              <Card>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
-                  Your Slides
-                </h3>
-                <iframe
-                  src={`data:application/pdf;base64,${pdfBase64}`}
-                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
-                  style={{ height: "70vh" }}
-                  title="Presentation slides"
-                />
+            {/* Recording section - overlays and fades in smoothly */}
+            <section
+              className={`absolute inset-x-0 top-0 flex flex-col items-center pt-4 transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                step === "recording" ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <Card className="w-full max-w-md animate-recording-panel-enter">
+                <div className="flex flex-col items-center gap-6 py-8">
+                  <p className="flex items-center gap-2 text-sm font-medium text-zinc-400">
+                    <span className="flex h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                    Recording voice...
+                  </p>
+                  <RecordingCircle
+                    isRecording={isRecording}
+                    canStart={!!stream}
+                    stream={stream}
+                    onStart={handleStartRecording}
+                    onStop={handleStopRecording}
+                  />
+                  <p className="text-xs text-zinc-500">Tap the circle to stop</p>
+                </div>
               </Card>
-            )}
-          </section>
+
+              {pdfBase64 && (
+                <Card className={`w-full mt-6 transition-opacity duration-300 ${isRecording ? "opacity-40" : "opacity-100"}`}>
+                  <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
+                    Your Slides
+                  </h3>
+                  <iframe
+                    src={`data:application/pdf;base64,${pdfBase64}`}
+                    className="w-full rounded-lg border border-zinc-700"
+                    style={{ height: "50vh" }}
+                    title="Presentation slides"
+                  />
+                </Card>
+              )}
+            </section>
+          </div>
         )}
 
         {step === "recorded_pending" && (
@@ -626,12 +704,16 @@ export default function MeetingRoom() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="relative">
                 <ScoreCard score={feedback.score} label="Overall score" />
-                <span className="absolute top-3 right-3 rounded-full bg-blue-100 dark:bg-blue-900 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+                <span className="absolute top-3 right-3 rounded-full bg-[#77A5C6]/20 px-2.5 py-0.5 text-xs font-medium text-[#77A5C6] dark:text-[#77A5C6]">
                   Attempt #{attemptNumber}
                 </span>
               </div>
               <div className="flex flex-col gap-2">
-                <Button variant="primary" onClick={handlePracticeAgain}>
+                <Button
+                  variant="secondary"
+                  onClick={handlePracticeAgain}
+                  className="bg-white text-[var(--heading)] hover:bg-zinc-100 border border-zinc-200 shadow-sm"
+                >
                   Practice Again
                 </Button>
                 <Button variant="secondary" onClick={handleReset}>
@@ -674,7 +756,7 @@ export default function MeetingRoom() {
 
             {transcript && (
               <Card>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-2">
                   What we heard
                 </h3>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">
@@ -687,7 +769,7 @@ export default function MeetingRoom() {
 
             {qaResults.length > 0 && (
               <Card>
-                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+                <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
                   Q&A Results
                 </h3>
                 <div className="space-y-2">
@@ -707,7 +789,7 @@ export default function MeetingRoom() {
             )}
 
             <Card>
-              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+              <h3 className="font-semibold text-[var(--heading)] dark:text-zinc-100 mb-4">
                 Progress
               </h3>
               <ProgressChart data={history} />
