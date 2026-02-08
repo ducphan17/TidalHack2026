@@ -391,6 +391,61 @@ ${answerTranscript}`;
   }
 }
 
+/* ---------- Conversational Q&A ---------- */
+
+const CONVERSATIONAL_QA_PROMPT = `You are a friendly, curious audience member who just watched a presentation. You're having a casual conversation with the presenter about their talk.
+
+Rules:
+- Keep responses to 1-3 sentences. Be concise and conversational.
+- Use contractions and short sentences — this will be spoken aloud.
+- If the user's answer is good, acknowledge it briefly and ask a follow-up or move on.
+- If the answer is unclear, gently ask for clarification.
+- Reference specific slides or content from the presentation when relevant.
+- Be encouraging but honest. Don't be overly formal.
+- Do NOT use markdown, bullet points, or any formatting. Just plain spoken text.
+
+Return this exact JSON:
+{ "answer": "Your spoken response here" }`;
+
+export async function conversationalQA(
+  utterance: string,
+  history: { role: "user" | "assistant"; text: string }[],
+  pdfBase64?: string
+): Promise<{ answer: string }> {
+  const historyText = history
+    .map((h) => `${h.role === "user" ? "Presenter" : "You"}: ${h.text}`)
+    .join("\n");
+
+  const textContent = `${CONVERSATIONAL_QA_PROMPT}
+
+---
+
+CONVERSATION SO FAR:
+${historyText || "(This is the start of the conversation)"}
+
+---
+
+PRESENTER JUST SAID:
+${utterance}`;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [{ text: textContent }];
+
+  if (pdfBase64) {
+    const cleanBase64 = pdfBase64
+      .replace(/^data:application\/pdf;base64,/, "")
+      .replace(/\s/g, "");
+    parts.push({
+      inline_data: {
+        mime_type: "application/pdf",
+        data: cleanBase64,
+      },
+    });
+  }
+
+  return await callGemini(parts, 512);
+}
+
 /* ---------- Legacy function (kept for backwards compat) ---------- */
 
 const ANALYSIS_PROMPT = `You are an expert presentation coach. Analyze this presentation and return JSON only.

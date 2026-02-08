@@ -13,7 +13,7 @@ import {
   FeedbackList,
   VoicePlayer,
 } from "@/components/feedback";
-import { QAPanel } from "@/components/qa";
+import { QAPanel, LiveQAPanel } from "@/components/qa";
 import { ProgressChart, type ProgressDataPoint } from "@/components/charts";
 import { Card, Button } from "@/components/shared";
 import { useMedia } from "@/hooks";
@@ -25,7 +25,8 @@ type Step =
   | "recorded_pending"
   | "analyzing"
   | "feedback"
-  | "qa_active";
+  | "qa_active"
+  | "live_qa";
 
 type AnalyzeStep = "transcribing" | "computing" | "analyzing" | "done";
 
@@ -246,7 +247,7 @@ export default function MeetingRoom() {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                text: data.presentation_report.summary,
+                text: resultData.presentation_report.summary,
                 mode: "recap",
                 voiceId: v.id,
               }),
@@ -645,6 +646,14 @@ export default function MeetingRoom() {
                     Start Q&A Practice
                   </Button>
                 )}
+                {sessionId && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setStep("live_qa")}
+                  >
+                    Live Q&A
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -720,6 +729,13 @@ export default function MeetingRoom() {
             questions={qaPack}
             sessionId={sessionId}
             onComplete={handleQAComplete}
+          />
+        )}
+
+        {step === "live_qa" && sessionId && (
+          <LiveQAPanel
+            sessionId={sessionId}
+            onEnd={() => setStep("feedback")}
           />
         )}
       </main>

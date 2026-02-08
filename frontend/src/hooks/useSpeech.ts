@@ -6,6 +6,7 @@ export type SpeechEngine = "webspeech" | "elevenlabs";
 
 export interface UseSpeechOptions {
   engine?: SpeechEngine;
+  autoRestart?: boolean;
   onResult?: (transcript: string, isFinal: boolean) => void;
 }
 
@@ -43,12 +44,13 @@ interface SpeechRecognitionInstance {
 }
 
 export function useSpeech(options: UseSpeechOptions = {}) {
-  const { engine = "webspeech", onResult } = options;
+  const { engine = "webspeech", autoRestart = false, onResult } = options;
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const transcriptRef = useRef("");
+  const stoppedRef = useRef(true);
 
   const startListening = useCallback(() => {
     setError(null);
@@ -92,23 +94,36 @@ export function useSpeech(options: UseSpeechOptions = {}) {
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent & { error?: string }) => {
+        if (event.error === "no-speech" && autoRestart && !stoppedRef.current) {
+          return;
+        }
         setError(event.error ?? "Unknown error");
         setIsListening(false);
       };
 
       recognition.onend = () => {
+        if (autoRestart && !stoppedRef.current) {
+          try {
+            recognition.start();
+          } catch {
+            setIsListening(false);
+          }
+          return;
+        }
         setIsListening(false);
       };
 
       recognitionRef.current = recognition;
+      stoppedRef.current = false;
       recognition.start();
       setIsListening(true);
     } else {
       setError("ElevenLabs real-time STT requires API integration");
     }
-  }, [engine, onResult]);
+  }, [engine, autoRestart, onResult]);
 
   const stopListening = useCallback(() => {
+    stoppedRef.current = true;
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
