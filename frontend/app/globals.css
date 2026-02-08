@@ -1,15 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #171717;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
+  --background: #77A5C6;
+  --foreground: #e4e4e7;
+  --card: #0f172a;
+  --card-foreground: #e4e4e7;
+  --heading: #A1C0D7;
+  --muted-foreground: #a1a1aa;
+  --accent: #77A5C6;
+  --accent-hover: #5f8fb5;
+  --accent-light: rgba(119, 165, 198, 0.15);
+}
+
+.panel-hover-shadow:hover {
+  box-shadow: 0 0 40px -5px rgba(236, 72, 153, 0.45),
+    0 0 25px -8px rgba(219, 39, 119, 0.3),
+    0 0 15px -10px rgba(244, 114, 182, 0.2);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-heading: var(--heading);
+  --color-muted-foreground: var(--muted-foreground);
   --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
 }
@@ -19,3 +34,53 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+@keyframes float {
+  0% {
+    transform: translateY(-10vh) translateX(0);
+  }
+  100% {
+    transform: translateY(110vh) translateX(0);
+  }
+}
+
+@keyframes bokeh-float {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  33% {
+    transform: translate(calc(-50% + 4%), calc(-50% - 3%)) scale(1.08);
+  }
+  66% {
+    transform: translate(calc(-50% - 3%), calc(-50% + 4%)) scale(0.92);
+  }
+}
+
+@keyframes gradient-border {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient-border {
+  animation: gradient-border 5s ease-in-out infinite;
+}
+
+@keyframes recording-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-recording-panel-enter {
+  animation: recording-panel-enter 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
